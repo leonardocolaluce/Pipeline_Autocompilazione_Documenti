@@ -9,7 +9,8 @@ RUN apt-get update \
         libreoffice-writer \
         libreoffice-common \
         poppler-utils \
-        libgl1-mesa-glx \
+        libgl1 \
+        libgl1-mesa-dri \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
