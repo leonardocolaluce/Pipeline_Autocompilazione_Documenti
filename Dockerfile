@@ -19,5 +19,10 @@ RUN python -m pip install --upgrade pip \
 
 COPY . .
 
+# Crea venv per OCR con PaddleOCR
+RUN python -m venv paddle311
+RUN paddle311/bin/pip install --upgrade pip \
+    && paddle311/bin/pip install --no-cache-dir -r m1_pipeline/ocr/requirements_ocr.txt
+
 EXPOSE 7860
 CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "7860"]
