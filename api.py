@@ -4,7 +4,7 @@ import asyncio
 import os
 from pathlib import Path
 from typing import Dict, Any
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException
+from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException, Query
 from fastapi.responses import FileResponse
 import shutil
 import sys
@@ -143,9 +143,14 @@ async def get_status(job_id: str):
 
 
 @app.get("/download/{job_id}")
-async def download(job_id: str):
+async def download(job_id: str, variant: str = Query(default="final", pattern="^(final|preview|any)$")):
     """
     Scarica il DOCX compilato.
+
+    Query params:
+      - variant=final   -> documento_compilato_finale.docx (default)
+      - variant=preview -> documento_compilato_preview.docx (se presente)
+      - variant=any     -> preview se c'è, altrimenti final, altrimenti primo .docx
     
     Returns:
         File DOCX
@@ -159,18 +164,33 @@ async def download(job_id: str):
     
     output_dir = Path(job["output_dir"])
     
-    # Cerca il DOCX finale (step11 writer_docx output)
     final_docx = output_dir / "documento_compilato_finale.docx"
-    if not final_docx.exists():
-        # Fallback: cerca qualsiasi .docx
-        docx_files = list(output_dir.glob("*.docx"))
-        if not docx_files:
-            raise HTTPException(status_code=500, detail="DOCX compilato non trovato")
-        final_docx = docx_files[0]
+    preview_docx = output_dir / "documento_compilato_preview.docx"
+
+    selected_docx: Path | None = None
+    if variant == "preview":
+        selected_docx = preview_docx if preview_docx.exists() else None
+        if selected_docx is None:
+            raise HTTPException(status_code=404, detail="DOCX preview non trovato")
+    elif variant == "final":
+        selected_docx = final_docx if final_docx.exists() else None
+        if selected_docx is None:
+            raise HTTPException(status_code=404, detail="DOCX finale non trovato")
+    else:  # any
+        if preview_docx.exists():
+            selected_docx = preview_docx
+        elif final_docx.exists():
+            selected_docx = final_docx
+        else:
+            docx_files = list(output_dir.glob("*.docx"))
+            selected_docx = docx_files[0] if docx_files else None
+
+    if selected_docx is None or not selected_docx.exists():
+        raise HTTPException(status_code=500, detail="DOCX compilato non trovato")
     
     return FileResponse(
-        path=final_docx,
-        filename=f"compilato_{job_id}.docx",
+        path=selected_docx,
+        filename=f"{variant}_{job_id}.docx",
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
     )
 
