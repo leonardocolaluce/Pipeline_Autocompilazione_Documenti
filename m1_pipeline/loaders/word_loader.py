@@ -2,6 +2,8 @@ import tempfile
 import shutil
 from pathlib import Path
 from typing import List, Dict, Any
+import os
+import subprocess
 
 from docx import Document
 from docx.shared import Pt
@@ -9,6 +11,41 @@ from docx.shared import Pt
 
 # Altezza riga approssimata in punti per stimare le coordinate y
 _LINE_HEIGHT_PT = 14
+
+
+def _find_soffice() -> str | None:
+    return shutil.which("soffice") or shutil.which("libreoffice")
+
+
+def _convert_with_libreoffice(input_path: str, out_dir: str, target_ext: str) -> str:
+    soffice = _find_soffice()
+    if not soffice:
+        raise RuntimeError("LibreOffice (soffice) non trovato nel PATH.")
+
+    Path(out_dir).mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            soffice,
+            "--headless",
+            "--nologo",
+            "--nolockcheck",
+            "--nodefault",
+            "--nofirststartwizard",
+            "--convert-to",
+            target_ext,
+            "--outdir",
+            str(Path(out_dir).resolve()),
+            str(Path(input_path).resolve()),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=True,
+    )
+
+    out_path = Path(out_dir) / (Path(input_path).stem + f".{target_ext}")
+    if not out_path.exists():
+        raise RuntimeError(f"Conversione LibreOffice fallita, output non trovato: {out_path}")
+    return str(out_path)
 
 
 def convert_doc_to_docx(doc_path: str) -> str:
@@ -25,6 +62,17 @@ def convert_doc_to_docx(doc_path: str) -> str:
     Raises:
         RuntimeError: se Microsoft Word non è disponibile o la conversione fallisce.
     """
+    if os.name != "nt":
+        tmp_dir = tempfile.mkdtemp(prefix="doc_to_docx_")
+        try:
+            return _convert_with_libreoffice(doc_path, tmp_dir, "docx")
+        except Exception as e:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise RuntimeError(
+                "Conversione .doc → .docx fallita. Assicurati che LibreOffice sia installato.\n"
+                f"Dettaglio: {e}"
+            )
+
     try:
         import win32com.client as win32
     except ImportError:
@@ -89,6 +137,17 @@ def convert_doc_to_docx(doc_path: str) -> str:
 
 
 def convert_word_to_pdf(word_path: str) -> str:
+    if os.name != "nt":
+        tmp_dir = tempfile.mkdtemp(prefix="word_to_pdf_")
+        try:
+            return _convert_with_libreoffice(word_path, tmp_dir, "pdf")
+        except Exception as e:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise RuntimeError(
+                "Conversione Word → PDF fallita. Assicurati che LibreOffice sia installato.\n"
+                f"Dettaglio: {e}"
+            )
+
     try:
         import win32com.client as win32
     except ImportError:
