@@ -29,14 +29,7 @@ def _resolve_docx_path(path: str) -> str:
 
 docx_path = os.path.abspath(_resolve_docx_path(args.input_docx))
 pdf_path = os.path.abspath(args.out_pdf)
-
-try:
-    import win32com.client  # type: ignore
-except Exception as e:
-    raise SystemExit(
-        "Errore: manca 'pywin32'. Installa con: pip install pywin32\n"
-        f"Dettaglio: {e}"
-    )
+WINDOWS = (os.name == "nt")
 
 def _try_unblock(path: str) -> None:
     # Se il file arriva da internet, Word può aprirlo in Protected View o rifiutarlo.
@@ -139,6 +132,27 @@ doc = None
 protected_view_window = None
 temp_docx = None
 repacked_docx = None
+
+if not WINDOWS:
+    # Su Linux (Render/HuggingFace) non esiste win32com/pywin32: usa direttamente LibreOffice.
+    try:
+        if _convert_with_libreoffice(docx_path, pdf_path):
+            print(f"Convertito: {docx_path} -> {pdf_path}")
+            raise SystemExit(0)
+    except SystemExit:
+        raise
+    except Exception as e:
+        raise SystemExit(f"Conversione LibreOffice fallita. Dettaglio: {e}")
+    raise SystemExit("LibreOffice non trovato o conversione fallita (soffice).")
+
+try:
+    import win32com.client  # type: ignore
+except Exception as e:
+    raise SystemExit(
+        "Errore: manca 'pywin32'. Installa con: pip install pywin32\n"
+        f"Dettaglio: {e}"
+    )
+
 try:
     _try_unblock(docx_path)
     word = win32com.client.DispatchEx("Word.Application")
