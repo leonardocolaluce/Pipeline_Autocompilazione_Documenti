@@ -195,6 +195,34 @@ async def download(job_id: str, variant: str = Query(default="final", pattern="^
     )
 
 
+@app.get("/download-mapping/{job_id}")
+async def download_mapping(job_id: str, variant: str = Query(default="provvisorio", pattern="^(provvisorio|finale)$")):
+    """
+    Scarica il JSON di mapping del job.
+
+    Query params:
+      - variant=provvisorio -> campo_valore_provvisorio.json (default)
+      - variant=finale      -> campo_valore_finale.json
+    """
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+
+    job = jobs[job_id]
+    if job["status"] != "completed":
+        raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
+
+    output_dir = Path(job["output_dir"])
+    mapping_path = output_dir / ("campo_valore_provvisorio.json" if variant == "provvisorio" else "campo_valore_finale.json")
+    if not mapping_path.exists():
+        raise HTTPException(status_code=404, detail=f"Mapping {variant} non trovato")
+
+    return FileResponse(
+        path=mapping_path,
+        filename=f"mapping_{variant}_{job_id}.json",
+        media_type="application/json",
+    )
+
+
 @app.get("/health")
 async def health():
     """Health check."""
