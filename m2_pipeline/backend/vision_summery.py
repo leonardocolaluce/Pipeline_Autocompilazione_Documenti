@@ -388,7 +388,7 @@ def run_vision_mapping(
             text = _extract_text_from_response(raw)
             match_obj, match_err = _extract_match_json(text or "")
             if match_obj is None:
-                raise RuntimeError(match_err or "Impossibile estrarre JSON dal modello.")
+                match_obj = {"matches": []}
         coerced = _coerce_match_output(match_obj, data_json)
         for match in coerced.get("matches") or []:
             match["image_page"] = image_path.name
