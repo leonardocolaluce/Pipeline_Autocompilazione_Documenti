@@ -9,6 +9,7 @@ from fastapi.responses import FileResponse
 import shutil
 import sys
 import importlib.util
+import zipfile
 
 app = FastAPI(title="Pipeline Autocompilazione")
 
@@ -243,6 +244,40 @@ async def download_mapping(job_id: str, variant: str = Query(default="provvisori
         path=mapping_path,
         filename=f"mapping_{variant}_{job_id}.json",
         media_type="application/json",
+    )
+
+@app.get("/download-m1/{job_id}")
+async def download_m1_output(job_id: str):
+    """
+    Scarica tutta la cartella m1_output del job in ZIP.
+    """
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+
+    job = jobs[job_id]
+    if job["status"] != "completed":
+        raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
+
+    m2_dir = Path(job["output_dir"])
+    m1_dir = m2_dir.parent / "m1_output"
+
+    if not m1_dir.exists():
+        raise HTTPException(status_code=404, detail="Cartella m1_output non trovata")
+
+    zip_path = m2_dir.parent / "m1_output_debug.zip"
+
+    if zip_path.exists():
+        zip_path.unlink()
+
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:
+        for path in m1_dir.rglob("*"):
+            if path.is_file():
+                z.write(path, path.relative_to(m1_dir))
+
+    return FileResponse(
+        path=zip_path,
+        filename=f"m1_output_{job_id}.zip",
+        media_type="application/zip",
     )
 
 
