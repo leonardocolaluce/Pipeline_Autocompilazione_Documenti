@@ -53,6 +53,13 @@ def _source_candidates() -> tuple[Path, ...]:
 
 
 def resolve_source_document(base_name: str) -> Optional[Path]:
+    forced = os.getenv("M2_FORCE_SOURCE_DOCX", "").strip()
+    if forced:
+        p = Path(forced)
+        print(f"[SOURCE] resolve_source_document FORCED={p} exists={p.exists()}", flush=True)
+        if p.exists():
+            return p
+
     target = _normalize_name(base_name)
     best_path: Optional[Path] = None
     best_score = -1
@@ -68,6 +75,13 @@ def resolve_source_document(base_name: str) -> Optional[Path]:
 
 
 def resolve_source_docx(base_name: str) -> Optional[Path]:
+    forced = os.getenv("M2_FORCE_SOURCE_DOCX", "").strip()
+    if forced:
+        p = Path(forced)
+        print(f"[SOURCE] resolve_source_docx FORCED={p} exists={p.exists()}", flush=True)
+        if p.exists() and p.suffix.lower() == ".docx":
+            return p
+
     target = _normalize_name(base_name)
     best_path: Optional[Path] = None
     best_score = -1
