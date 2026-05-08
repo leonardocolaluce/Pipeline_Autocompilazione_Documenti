@@ -11,7 +11,14 @@ RUN apt-get update \
         poppler-utils \
         libgl1 \
         libgl1-mesa-dri \
+        fontconfig \
+        fonts-dejavu \
+        fonts-liberation \
+        fonts-crosextra-carlito \
+        fonts-crosextra-caladea \
+    && fc-cache -f -v \
     && rm -rf /var/lib/apt/lists/*
+
 
 COPY requirements.txt .
 RUN python -m pip install --upgrade pip \
