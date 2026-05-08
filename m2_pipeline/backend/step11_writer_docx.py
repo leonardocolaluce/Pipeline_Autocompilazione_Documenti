@@ -86,8 +86,6 @@ def _page(row: dict[str, Any]) -> int:
 def _filled_coordinate_rows(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     filled = []
     for row in rows:
-        if str(row.get("item_type", "")).strip() != "field":
-            continue
         if not _answer(row) or not _bbox(row):
             continue
         filled.append(row)
@@ -136,32 +134,46 @@ def _register_docx_namespaces(doc_xml: bytes) -> None:
 
 
 def _paragraph_page_anchors(root: ET.Element) -> dict[int, ET.Element]:
+    # NOTE: `w:lastRenderedPageBreak` is not fully reliable, but it's the best we can do
+    # without automating Word pagination. We make it more stable by ensuring anchors are
+    # never inside tables (anchors in tables can make shapes position relative to the table).
+    parent_map: dict[ET.Element, ET.Element] = {child: parent for parent in root.iter() for child in parent}
+
+    def _is_in_table(el: ET.Element) -> bool:
+        cur = el
+        while cur in parent_map:
+            cur = parent_map[cur]
+            if cur.tag == f"{{{W_NS}}}tbl":
+                return True
+        return False
+
     body = root.find("w:body", NS)
     paragraphs = body.findall(".//w:p", NS) if body is not None else root.findall(".//w:p", NS)
     anchors: dict[int, ET.Element] = {}
     page = 1
 
     for p in paragraphs:
-        anchors.setdefault(page, p)
+        if page not in anchors and not _is_in_table(p):
+            anchors[page] = p
         breaks = p.findall(".//w:lastRenderedPageBreak", NS)
-        if breaks:
-            page += len(breaks)
-            anchors.setdefault(page, p)
+        # Hard page breaks also help when present.
+        hard_breaks = [
+            br for br in p.findall(".//w:br", NS)
+            if str(br.get(f"{{{W_NS}}}type") or "").lower() == "page"
+        ]
+        breaks_count = len(breaks) + len(hard_breaks)
+        if breaks_count:
+            page += breaks_count
+            if page not in anchors and not _is_in_table(p):
+                anchors[page] = p
 
     return anchors
 
 
 def _page_overlay_offset(root: ET.Element, page: int) -> tuple[float, float]:
-    if page <= 1:
-        return 0.0, 0.0
-
-    pg_mar = root.find(".//w:sectPr/w:pgMar", NS)
-    if pg_mar is None:
-        return 0.0, 0.0
-
-    left = _num(pg_mar.get(f"{{{W_NS}}}left"), 0.0) / 20.0
-    top = _num(pg_mar.get(f"{{{W_NS}}}top"), 0.0) / 20.0
-    return left, top + 3.25
+    # The bbox coordinates we use are already in page coordinates (points) coming from
+    # the PDF layout. Applying margins here makes pages >1 drift.
+    return 0.0, 0.0
 
 
 def _page_width(root: ET.Element) -> float:
@@ -279,6 +291,8 @@ def _append_vml_textbox(
     wrap = ET.SubElement(shape, f"{{{W10_NS}}}wrap")
     wrap.set("anchorx", "page")
     wrap.set("anchory", "page")
+    # Prevent Word from moving the anchor (important for multi-page docs).
+    ET.SubElement(shape, f"{{{W10_NS}}}anchorlock")
 
 
 _PLACEHOLDER_RE = re.compile(r"(?:_{4,}|[.…\.]{4,})")
@@ -589,6 +603,7 @@ def compile_docx_from_json(
     out_path = Path(output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
+
     filled_rows = _filled_coordinate_rows(rows)
     if not filled_rows:
         raise RuntimeError("Nessun campo compilato: nel JSON non ci sono answer con bbox valide.")
@@ -635,8 +650,9 @@ def compile_docx_from_json(
             height=height,
             text=answer,
             font_size=font_size,
-            color_hex=str(color_hex).strip().lstrip("#") or "FF0000",
+            color_hex=color_hex,
         )
+
         applied += 1
 
     with zipfile.ZipFile(src_docx, "r") as z_in, zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as z_out:
@@ -650,7 +666,6 @@ def compile_docx_from_json(
         raise RuntimeError("Nessun campo compilato: nessuna textbox inserita nel DOCX.")
 
     return out_path
-
 
 def write_docx_from_mapping(
     source_path: str | Path,
@@ -720,9 +735,12 @@ def main() -> None:
         raise FileNotFoundError(f"JSON non trovato: {json_path}")
     word_override = word_path if word_path.exists() and word_path.suffix.lower() == ".docx" else None
 
-    out_path = here / "documento_compilato_debug.docx"
-    result = compile_docx_from_json(json_path=json_path, output_path=out_path, word_path_override=word_override)
-    print(str(result))
+    out_path = compile_docx_from_json(
+        json_path=json_path,
+        output_path=here / "documento_compilato_debug.docx",
+        word_path_override=word_override,
+    )
+    print(str(out_path))
 
 
 if __name__ == "__main__":
