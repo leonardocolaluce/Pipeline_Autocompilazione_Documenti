@@ -150,6 +150,9 @@ def process(
 
     pdf_fixed_path = post_dir / "input.pdf"
     campi_pdf_path = post_dir / "campi_pdf.json"
+    pdf_fixed_path.unlink(missing_ok=True)
+    campi_pdf_path.unlink(missing_ok=True)
+
 
     # 1) prepara input.pdf
     if file_type == "word":
