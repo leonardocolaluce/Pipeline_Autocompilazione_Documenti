@@ -1,6 +1,5 @@
 import re
 import zipfile
-from functools import lru_cache
 import os
 from pathlib import Path
 from typing import Optional
@@ -37,7 +36,6 @@ def _score_candidate(target: str, candidate: str) -> int:
     return score
 
 
-@lru_cache(maxsize=1)
 def _source_candidates() -> tuple[Path, ...]:
     candidates = []
     for suffix in ("*.docx", "*.pdf"):
