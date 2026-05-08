@@ -36,9 +36,14 @@ def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
         jobs[job_id]["status"] = "running"
         jobs[job_id]["progress"] = "Avviamento M1..."
 
-        shutil.rmtree(PROJECT_ROOT / "output", ignore_errors=True)
+        old_output = PROJECT_ROOT / "output"
+        print(f"[CLEANUP] Cancello output precedente: {old_output} exists={old_output.exists()}", flush=True)
+        shutil.rmtree(old_output, ignore_errors=True)
+        print(f"[CLEANUP] Output cancellato: exists={old_output.exists()}", flush=True)
 
         output_root = PROJECT_ROOT / "output" / job_id
+        print(f"[JOB] Nuovo output_root: {output_root}", flush=True)
+
 
         m1_out = output_root / "m1_output"
         m2_out = output_root / "m2_output"
@@ -95,10 +100,15 @@ async def upload(file: UploadFile = File(...), data_json: UploadFile = File(...)
     """
     job_id = str(uuid.uuid4())
 
-    shutil.rmtree(PROJECT_ROOT / "tmp", ignore_errors=True)
+    old_tmp = PROJECT_ROOT / "tmp"
+    print(f"[CLEANUP] Cancello tmp precedente: {old_tmp} exists={old_tmp.exists()}", flush=True)
+    shutil.rmtree(old_tmp, ignore_errors=True)
+    print(f"[CLEANUP] Tmp cancellato: exists={old_tmp.exists()}", flush=True)
     
     # Salva file temporanei
     tmp_dir = PROJECT_ROOT / "tmp" / job_id
+    print(f"[UPLOAD] Nuova tmp_dir: {tmp_dir}", flush=True)
+
 
     tmp_dir.mkdir(parents=True, exist_ok=True)
     
@@ -110,6 +120,10 @@ async def upload(file: UploadFile = File(...), data_json: UploadFile = File(...)
     
     with open(data_json_path, "wb") as f:
         f.write(await data_json.read())
+
+    print(f"[UPLOAD] Documento salvato: {doc_path} exists={doc_path.exists()} size={doc_path.stat().st_size}", flush=True)
+    print(f"[UPLOAD] JSON salvato: {data_json_path} exists={data_json_path.exists()} size={data_json_path.stat().st_size}", flush=True)
+
     
     # Crea job
     jobs[job_id] = {
