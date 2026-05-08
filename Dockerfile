@@ -16,8 +16,12 @@ RUN apt-get update \
         fonts-liberation \
         fonts-crosextra-carlito \
         fonts-crosextra-caladea \
+        fonts-noto-core \
+        fonts-noto-extra \
+        fonts-noto-ui-core \
     && fc-cache -f -v \
     && rm -rf /var/lib/apt/lists/*
+
 
 
 COPY requirements.txt .
