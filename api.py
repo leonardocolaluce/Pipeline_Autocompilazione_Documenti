@@ -66,6 +66,9 @@ def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
         jobs[job_id]["progress"] = "M2: Mappatura campi..."
         sys.path.insert(0, str(PROJECT_ROOT / "m2_pipeline"))
         os.environ["M2_EXTRA_DOCX_DIRS"] = str(m1_out)
+        os.environ["M2_FORCE_SOURCE_DOCX"] = str(docx_source)
+        print(f"[SOURCE] Forzo DOCX sorgente M2: {docx_source}", flush=True)
+
         m2_main = _load_module("m2_main", M2_PATH)
         os.environ["M2_CLASSIFY_INPUT_DOC"] = str(doc_path)
         
