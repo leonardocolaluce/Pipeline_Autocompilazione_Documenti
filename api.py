@@ -36,7 +36,10 @@ def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
         jobs[job_id]["status"] = "running"
         jobs[job_id]["progress"] = "Avviamento M1..."
 
+        shutil.rmtree(PROJECT_ROOT / "output", ignore_errors=True)
+
         output_root = PROJECT_ROOT / "output" / job_id
+
         m1_out = output_root / "m1_output"
         m2_out = output_root / "m2_output"
         m1_out.mkdir(parents=True, exist_ok=True)
@@ -91,9 +94,12 @@ async def upload(file: UploadFile = File(...), data_json: UploadFile = File(...)
         {"job_id": "uuid", "status": "queued"}
     """
     job_id = str(uuid.uuid4())
+
+    shutil.rmtree(PROJECT_ROOT / "tmp", ignore_errors=True)
     
     # Salva file temporanei
     tmp_dir = PROJECT_ROOT / "tmp" / job_id
+
     tmp_dir.mkdir(parents=True, exist_ok=True)
     
     doc_path = tmp_dir / file.filename
