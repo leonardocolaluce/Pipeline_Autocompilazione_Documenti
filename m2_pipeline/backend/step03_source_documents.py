@@ -72,7 +72,7 @@ def resolve_source_docx(base_name: str) -> Optional[Path]:
     best_path: Optional[Path] = None
     best_score = -1
 
-    for root in [SAMPLE_EXTRACTED_ROOT] + _extra_roots():
+    for root in _extra_roots() + [SAMPLE_EXTRACTED_ROOT]:
         if not root.exists():
             continue
         for path in root.rglob("*.docx"):
