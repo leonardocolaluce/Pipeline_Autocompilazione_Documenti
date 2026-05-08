@@ -13,14 +13,25 @@ RUN apt-get update \
         libgl1-mesa-dri \
         fontconfig \
         fonts-dejavu \
+        fonts-dejavu-extra \
         fonts-liberation \
+        fonts-liberation2 \
         fonts-crosextra-carlito \
         fonts-crosextra-caladea \
         fonts-noto-core \
         fonts-noto-extra \
         fonts-noto-ui-core \
+        fonts-noto-ui-extra \
+        fonts-noto-color-emoji \
+        fonts-texgyre \
+        fonts-texgyre-math \
+        fonts-freefont-ttf \
+        fonts-opensymbol \
+        fonts-symbola \
+        fonts-urw-base35 \
     && fc-cache -f -v \
     && rm -rf /var/lib/apt/lists/*
+
 
 
 
