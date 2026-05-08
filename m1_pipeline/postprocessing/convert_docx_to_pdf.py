@@ -92,16 +92,27 @@ def _convert_with_libreoffice(docx: str, out_pdf: str) -> bool:
         out_dir,
         docx,
     ]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Evita di riusare un PDF vecchio rimasto da un run precedente.
     if os.path.exists(out_pdf):
-        return True
+        os.remove(out_pdf)
+
+    if os.path.abspath(expected_pdf) != os.path.abspath(out_pdf) and os.path.exists(expected_pdf):
+        os.remove(expected_pdf)
+
+    print(f"[DOCX2PDF] Input DOCX: {docx}", flush=True)
+    print(f"[DOCX2PDF] Output PDF target: {out_pdf}", flush=True)
+    print(f"[DOCX2PDF] LibreOffice expected PDF: {expected_pdf}", flush=True)
+
+    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
     if os.path.exists(expected_pdf):
         if os.path.abspath(expected_pdf) != os.path.abspath(out_pdf):
-            if os.path.exists(out_pdf):
-                os.remove(out_pdf)
             os.replace(expected_pdf, out_pdf)
         return True
-    return False
+
+    return os.path.exists(out_pdf)
+
 
 
 def _repack_docx(src_docx: str) -> str:
