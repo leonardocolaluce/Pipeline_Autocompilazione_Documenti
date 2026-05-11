@@ -4,6 +4,7 @@ ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
 RUN apt-get update \
+    && echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
     && apt-get install -y --no-install-recommends \
         libreoffice-core \
         libreoffice-writer \
@@ -29,6 +30,7 @@ RUN apt-get update \
         fonts-opensymbol \
         fonts-symbola \
         fonts-urw-base35 \
+        ttf-mscorefonts-installer \
     && fc-cache -f -v \
     && rm -rf /var/lib/apt/lists/*
 
