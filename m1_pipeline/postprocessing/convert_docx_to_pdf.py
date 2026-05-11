@@ -4,6 +4,10 @@ import subprocess
 import tempfile
 import zipfile
 import argparse
+import time
+import uuid
+import requests
+import msal
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--input-docx", required=True)
@@ -113,7 +117,64 @@ def _convert_with_libreoffice(docx: str, out_pdf: str) -> bool:
 
     return os.path.exists(out_pdf)
 
+def _convert_with_microsoft_graph(docx: str, out_pdf: str) -> bool:
+    client_id = os.environ["MS_CLIENT_ID"]
+    client_secret = os.environ["MS_CLIENT_SECRET"]
+    refresh_token = os.environ["MS_REFRESH_TOKEN"]
 
+    authority = "https://login.microsoftonline.com/consumers"
+
+    app = msal.ConfidentialClientApplication(
+        client_id=client_id,
+        client_credential=client_secret,
+        authority=authority,
+    )
+
+    token_result = app.acquire_token_by_refresh_token(
+        refresh_token,
+        scopes=["Files.ReadWrite", "offline_access"]
+    )
+
+    if "access_token" not in token_result:
+        raise RuntimeError(f"Microsoft Graph auth failed: {token_result}")
+
+    access_token = token_result["access_token"]
+
+    headers = {
+        "Authorization": f"Bearer {access_token}"
+    }
+
+    filename = f"temp_convert_{uuid.uuid4().hex}.docx"
+
+    upload_url = f"https://graph.microsoft.com/v1.0/me/drive/root:/{filename}:/content"
+
+    with open(docx, "rb") as f:
+        upload_response = requests.put(upload_url, headers=headers, data=f)
+
+    if upload_response.status_code not in (200, 201):
+        raise RuntimeError(f"Upload DOCX failed: {upload_response.status_code} {upload_response.text}")
+
+    item = upload_response.json()
+    item_id = item["id"]
+
+    try:
+        pdf_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{item_id}/content?format=pdf"
+
+        pdf_response = requests.get(pdf_url, headers=headers, allow_redirects=True)
+
+        if pdf_response.status_code != 200:
+            raise RuntimeError(f"PDF conversion failed: {pdf_response.status_code} {pdf_response.text}")
+
+        os.makedirs(os.path.dirname(out_pdf), exist_ok=True)
+
+        with open(out_pdf, "wb") as f:
+            f.write(pdf_response.content)
+
+        return os.path.exists(out_pdf) and os.path.getsize(out_pdf) > 0
+
+    finally:
+        delete_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{item_id}"
+        requests.delete(delete_url, headers=headers)
 
 def _repack_docx(src_docx: str) -> str:
     """
@@ -145,16 +206,25 @@ temp_docx = None
 repacked_docx = None
 
 if not WINDOWS:
-    # Su Linux (Render/HuggingFace) non esiste win32com/pywin32: usa direttamente LibreOffice.
     try:
-        if _convert_with_libreoffice(docx_path, pdf_path):
-            print(f"Convertito: {docx_path} -> {pdf_path}")
+        if _convert_with_microsoft_graph(docx_path, pdf_path):
+            print(f"Convertito con Microsoft Graph: {docx_path} -> {pdf_path}")
             raise SystemExit(0)
     except SystemExit:
         raise
     except Exception as e:
-        raise SystemExit(f"Conversione LibreOffice fallita. Dettaglio: {e}")
-    raise SystemExit("LibreOffice non trovato o conversione fallita (soffice).")
+        print(f"[DOCX2PDF] Microsoft Graph fallito: {e}", flush=True)
+
+    try:
+        if _convert_with_libreoffice(docx_path, pdf_path):
+            print(f"Convertito con LibreOffice fallback: {docx_path} -> {pdf_path}")
+            raise SystemExit(0)
+    except SystemExit:
+        raise
+    except Exception as e:
+        raise SystemExit(f"Conversione fallita sia con Microsoft Graph sia con LibreOffice. Dettaglio: {e}")
+
+    raise SystemExit("Conversione fallita.")
 
 try:
     import win32com.client  # type: ignore
