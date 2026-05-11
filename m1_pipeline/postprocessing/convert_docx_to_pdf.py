@@ -125,9 +125,8 @@ def _convert_with_microsoft_graph(docx: str, out_pdf: str) -> bool:
     
     authority = f"https://login.microsoftonline.com/{tenant_id}"
 
-    app = msal.ConfidentialClientApplication(
+    app = msal.PublicClientApplication(
         client_id=client_id,
-        client_credential=client_secret,
         authority=authority,
     )
 
