@@ -118,11 +118,12 @@ def _convert_with_libreoffice(docx: str, out_pdf: str) -> bool:
     return os.path.exists(out_pdf)
 
 def _convert_with_microsoft_graph(docx: str, out_pdf: str) -> bool:
-    client_id = os.environ["MS_CLIENT_ID"]
-    client_secret = os.environ["MS_CLIENT_SECRET"]
-    refresh_token = os.environ["MS_REFRESH_TOKEN"]
-
-    authority = "https://login.microsoftonline.com/consumers"
+    client_id = "d9bd369d-1fb5-43d0-a480-e90640c226b6"
+    client_secret = "QQj8Q~kZjM4rIYYr1RVXZ6~7XD_drYrPNWXvUbhh"
+    refresh_token = "1.AUsAU6FlNwZJVUSbjJ9j-2RrpZ02vdm1H9BDpIDpBkDCJrYAAPJLAA.BQABAwIAAAADAOz_BQD0_0V2b1N0c0FydGlmYWN0cwIAAAAAAM1bJGe4a8yJY0M9vOnotv3eK-ITe_7xDdtbUIuQH0y14tx5ysfxcTpstPfmsoYzt98fgr8QNFfFALMwghbXBHrdUFWUCt3fD1OZvuvvbHjYXml0u1b-9EdOX5R9pUnmGMkfm_plWDCOfS6xBQsj40ZhZznhNF2NAD7k0TcxfUyH9M9YRcyNvHqQ1-W7xlYMNmy3GuJ7r54Uw5M6-ksdbgYr3WBLrPfaj_uaEOuKC0eWk1v-BBXaweO9dWw6qOo7sVLwk0yq0ASN-E2fs_es1Wlj5oSi8Iy6M53vn1PUC1VSOEILnOP-pD90UfB-m3W5RlELGhj2xNLmKgLDS7UwmZsZb0MdZS9gwxkjZ1YD3VvnPmnsoaow050DH2FltfL582MtAb4zKnpt9f6lMZUw68aAq3TINDlxJgC2OfWNnEKBBiOYvc-oZ7i2gJXdY0atXij1gUozgkxYUfCrHZWDrD6znJ6NCDnSIeq6Zfb8TVidX5j63PnrOu0sQDRmwTQmt_PCLIIW5C87vBowBIZL0b-AKyIveORDR9hoqPBbMx7Krnke3YTBO-OaRjWHNQdZvvANTOITON-BQn5OPz-UfrdLBSCFpQrQGFEWB6vNxx0xXFYjeaUEOT6lnZCh0zA9N6anl3aHOyajzGPj0Vh79THOY6h2l7stI6z2jmwDFlcM-hKIX5B6-RNr5Ut1dblUTwIa61KBFwC_pFUGNDJEfVyuC9DzCSdTmNNMkTQ6eaR7nBhdZiLXlKn3PS5klRK8ebgjKhHvOir3d3zXrHNZMqg0XdVXVUWDec4zm_MZzdDhjYDridp4UmBZbP3gr3_OJPLfKjNrufq7uzMKG10o2swfK1iFNd5xOyJN9dS3FiF4fXiJfq1YbFXWtTaLLunIEu2CYNOShp0tKH1I3mM7pLhPBIxGX5lgvvG6eM1NdM0djechVGVBAmOI02hLIpksKx88gTwzCP26yEC_7lpg6n5Vtzv6Qxw7wNQuVkkLeLkb45BXua1wxoEyNVyA6oPuUzooxt-hfPtokln0HCDmH3XxGumP4Kfv7n9o6jLd1806Ma172vCB6ENpJRfTkiz-G7YRaXSAjw6WkmVB-qbGh_zbv0Ep2ZWciGtNj_CSEzDq_rflXrGhDOD-BYrwkvU74BuquRUU6AV5Nduc6xnZaN61PxBqrtXc1OF3ynQbG3oO5AGnryfcv2YSff4U0OQt2VzeL5nqTyDtHA744Hh4Vg4W-45rlmSGDTdC1UqOEWK8WU5He5ICA3gQyjvwFEWwOGtQFzbCJVroxh2C415uhxUtzYE0Q09H1YitWikpMQrzU3oU2uOkY_BjTO9g-7jhl2hkQpkP7T4DaoUk4kKsNkY-bnxE0ATfxuXENsbtFdrfjNeNse5k12NNCNIGjf_TfAJBIma3Tk2d4rSZu6pI6d08_ftNhRMnawEkAm-Q5o939zUxbcPQi1CTCY42RYK6y6tm8mMQfCFlJx0djT19jc4ue86Ab9fFkH-a1KFa1tDD39TasTKwZxmveCJK0QA-_VdMVZzFUHmkhCB1IhVDITbCmBDI3aHl0dMqrPPY7_bFrNiyEOyCjdW6HjqjUkGji6BIHbJ9bwWl-U7wx0iOZY7fUDorWbTpFoHNJRSveAw-dt0neBjiHjaVDQg5Wy0zWQ5dexr_y6z2VW766LSpV21wSx5Issr1Ow-vcnEyCpPeVz3vBbvpWSXOgWs4AnsfHODE5sXD8NUOrIUfIXk4peHprkKFT89riaRsqrcnopDRo3Bjn8mj10grcI-4FtnbmbjtFKLfHSkxZ5MBaFYy2-MY1RS1HPpTTwRshVGJV9Tp2g5L9h6fN2WCm6AeIjurkowIfGs"
+    tenant_id = "3765a153-4906-4455-9b8c-9f63fb646ba5"
+    
+    authority = f"https://login.microsoftonline.com/{tenant_id}"
 
     app = msal.ConfidentialClientApplication(
         client_id=client_id,
@@ -132,7 +133,7 @@ def _convert_with_microsoft_graph(docx: str, out_pdf: str) -> bool:
 
     token_result = app.acquire_token_by_refresh_token(
         refresh_token,
-        scopes=["Files.ReadWrite", "offline_access"]
+        scopes=["Files.ReadWrite"]
     )
 
     if "access_token" not in token_result:
