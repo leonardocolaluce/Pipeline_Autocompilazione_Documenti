@@ -47,12 +47,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--data-json", default=DEFAULT_DATA_JSON, help="JSON anagrafica/dati per compilazione.")
     parser.add_argument("--output-dir", default=DEFAULT_OUTPUT_DIR, help="Cartella output complessiva.")
     parser.add_argument("--bundle-name", default=None, help="Nome bundle per M2 (opzionale).")
+    parser.add_argument("--source-docx", default=None, help="DOCX template da usare se --doc-input è PDF (opzionale).")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
     doc_input = _coerce_path(args.doc_input)
+    source_docx = _coerce_path(args.source_docx) if getattr(args, "source_docx", None) else None
     data_json = _coerce_path(args.data_json)
     output_root = Path(args.output_dir).resolve()
 
@@ -89,6 +91,8 @@ def main() -> None:
     # --- Milestone 2 ---
     sys.path.insert(0, str(ROOT / "m2_pipeline"))
     os.environ["M2_EXTRA_DOCX_DIRS"] = str(m1_out)
+    if source_docx and not source_docx.exists(): raise FileNotFoundError(f"DOCX template non trovato: {source_docx}")
+    if source_docx: os.environ["M2_SOURCE_DOCX_OVERRIDE"] = str(source_docx)
     m2_main = _load_module("m2_main", M2_PATH)
     os.environ["M2_CLASSIFY_INPUT_DOC"] = str(doc_input)
     m2_result = m2_main.run_all(
