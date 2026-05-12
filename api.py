@@ -10,6 +10,10 @@ import shutil
 import sys
 import importlib.util
 import zipfile
+import subprocess
+import tempfile
+import base64
+import fitz 
 
 app = FastAPI(title="Pipeline Autocompilazione")
 
@@ -280,6 +284,35 @@ async def download_m1_output(job_id: str):
         media_type="application/zip",
     )
 
+@app.get("/preview-pages/{job_id}")
+async def preview_pages(job_id: str):
+    if job_id not in jobs:
+        raise HTTPException(status_code=404, detail="Job non trovato")
+    job = jobs[job_id]
+    if job["status"] != "completed":
+        raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
+
+    output_dir = Path(job["output_dir"])
+    preview_docx = output_dir / "documento_compilato_preview.docx"
+    final_docx   = output_dir / "documento_compilato_finale.docx"
+    docx_path = preview_docx if preview_docx.exists() else final_docx
+    if not docx_path.exists():
+        raise HTTPException(status_code=404, detail="DOCX compilato non trovato")
+
+    pages_b64 = []
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subprocess.run([
+            "libreoffice", "--headless", "--convert-to", "pdf",
+            "--outdir", tmpdir, str(docx_path)
+        ], check=True, timeout=120)
+        pdf_file = next(Path(tmpdir).glob("*.pdf"))
+        doc = fitz.open(str(pdf_file))
+        for pg in doc:
+            pix = pg.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+            pages_b64.append(base64.b64encode(pix.tobytes("png")).decode())
+        doc.close()
+
+    return {"pages": pages_b64, "total": len(pages_b64)}
 
 @app.get("/health")
 async def health():
