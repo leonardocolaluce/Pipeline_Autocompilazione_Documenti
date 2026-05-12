@@ -15,11 +15,13 @@ from backend.step07_classify_documents_llm import classify_bundles
 from backend.step10_field_mapper_vision import map_bundle_fields_vision
 from backend.step12_final_validator_llm import validate_and_prune
 from backend.step04_import_file import discover_m1_bundles
-from backend.step03_source_documents import resolve_source_docx
+from backend.step03_source_documents import resolve_source_docx, resolve_source_document
 from backend.step11_writer_docx import write_docx_from_mapping, write_docx_preview_from_answers_json
+from backend.step11_writer_pdf import write_pdf_from_answers_json
 from backend.step13_provisional_excel_export import EXCEL_PROVISIONAL_FILENAME, export_mapping_comparison_to_xlsx
 from backend.step06_xml_to_json_bridge import convert_xml_with_existing_script
 from backend.step10_merge_tables_into_mapping import merge_tables_filled_into_mapping
+
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -158,7 +160,14 @@ def run_map_fields(m1_dir: str, output_dir: str, xml_input: str | None, bundle_n
             break
 
     if selected_bundle is None:
-        raise ValueError("Nessun bundle compilabile trovato con i criteri richiesti.")
+        return {
+            "status": "skipped",
+            "step": "map_fields",
+            "reason": "no_compilable_bundle",
+            "bundle_name": bundle_name,
+            "xml_output": xml_result.get("json_output"),
+        }
+
 
     mapping_result = map_bundle_fields_vision(
         selected_bundle,
@@ -275,6 +284,16 @@ def run_all(
     classify_res = run_classify_documents(m1_dir, output_dir)
     xml_res = run_convert_xml(output_dir, xml_input)
     map_res = run_map_fields(m1_dir, output_dir, xml_input, bundle_name)
+    if map_res.get("status") != "ok":
+        return {
+            "status": "skipped",
+            "step": "run_all",
+            "bundle_name": bundle_name,
+            "classification_output": classify_res.get("output"),
+            "xml_output": xml_res.get("json_output"),
+            "reason": map_res.get("reason") or "no_compilable_bundle",
+        }
+
 
     # Snapshot mapping before the validator (3rd LLM) potentially prunes answers.
     pre_validator_mapping = Path(output_dir) / "campo_valore_provvisorio.json"
@@ -297,20 +316,45 @@ def run_all(
     except Exception:
         pass
 
-    write_res = run_write_docx(output_dir, bundle_name, venv_python)
+    source_doc = resolve_source_document(bundle_name)
+    pdf_mode = bool(source_doc is not None and source_doc.suffix.lower() == ".pdf")
+    
+    preview_pdf_path = Path(output_dir) / "documento_compilato_preview.pdf"
     preview_path = Path(output_dir) / "documento_compilato_preview.docx"
-    try:
-        source_docx = resolve_source_docx(bundle_name)
-        if source_docx is not None and pre_validator_mapping.exists():
-            write_docx_preview_from_answers_json(
-                source_docx,
-                pre_validator_mapping,
-                preview_path,
-                color_hex="0000FF",
-            )
-    except Exception:
-        pass
-    validate_res = run_validate_final(output_dir, bundle_name, venv_python)
+    compiled_pdf_path = Path(output_dir) / "documento_compilato_finale.pdf"
+    
+    if pdf_mode:
+        try:
+            if source_doc is not None and pre_validator_mapping.exists():
+                write_pdf_from_answers_json(
+                    source_doc,
+                    pre_validator_mapping,
+                    preview_pdf_path,
+                    color_rgb=(0, 0, 1),
+                    add_white_bg=False,
+                )
+        except Exception:
+            pass
+    
+        try:
+            validate_res = validate_and_prune(Path(output_dir), Path(output_dir) / "__compiled_docx_not_available__.docx")
+        except Exception:
+            validate_res = {"removed_count": 0}
+    else:
+        write_res = run_write_docx(output_dir, bundle_name, venv_python)
+        try:
+            source_docx = resolve_source_docx(bundle_name)
+            if source_docx is not None and pre_validator_mapping.exists():
+                write_docx_preview_from_answers_json(
+                    source_docx,
+                    pre_validator_mapping,
+                    preview_path,
+                    color_hex="0000FF",
+                )
+        except Exception:
+            pass
+        validate_res = run_validate_final(output_dir, bundle_name, venv_python)
+
 
     post_validator_mapping = Path(output_dir) / "campo_valore_finale.json"
     try:
@@ -319,7 +363,21 @@ def run_all(
             shutil.copy2(mapping_src, post_validator_mapping)
     except Exception:
         pass
+    try:
+        mapping_src = Path(output_dir) / FIELD_MAPPING_FILENAME
+        if source_doc is not None and source_doc.suffix.lower() == ".pdf" and mapping_src.exists():
+            write_pdf_from_answers_json(
+                source_doc,
+                mapping_src,
+                compiled_pdf_path,
+                color_rgb=(0, 0, 1),
+                add_white_bg=False,
+            )
+    except Exception:
+        pass
+    
     provisional_excel_path = Path(output_dir) / EXCEL_PROVISIONAL_FILENAME
+
     try:
         if pre_validator_mapping.exists() and post_validator_mapping.exists():
             export_mapping_comparison_to_xlsx(
@@ -341,9 +399,11 @@ def run_all(
         "mapping_output_provvisorio_excel": str(provisional_excel_path) if provisional_excel_path.exists() else None,
         "mapping_output_finale": str(post_validator_mapping) if post_validator_mapping.exists() else None,
         "summary_output": str(Path(output_dir) / SUMMARY_FILENAME),
-        "compiled_output": write_res["compiled_output"],
-        "compiled_output_preview": str(preview_path) if preview_path.exists() else None,
-        "validator_removed_count": validate_res["removed_count"],
+        "compiled_output": (write_res["compiled_output"] if not pdf_mode else None),
+        "compiled_output_preview": (str(preview_path) if (not pdf_mode and preview_path.exists()) else None),
+        "compiled_output_preview_pdf": str(preview_pdf_path) if preview_pdf_path.exists() else None,
+        "compiled_output_pdf": str(compiled_pdf_path) if compiled_pdf_path.exists() else None,
+        "validator_removed_count": int(validate_res.get("removed_count", 0) or 0),
     }
 
 
