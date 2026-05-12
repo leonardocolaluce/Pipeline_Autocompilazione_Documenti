@@ -30,8 +30,8 @@ MSO_BRING_TO_FRONT = 0
 MSO_FALSE = 0
 
 # --- PERCORSI ESPLICITI (default) ---
-JSON_INPUT_PATH = r"C:\Users\39334\Desktop\Autocompilazione file\Millestone_3\pipeline_4\output\m2_output\campo_valore_provvisorio.json"
-WORD_TEMPLATE_PATH = r"C:\Users\39334\Desktop\Autocompilazione file\Millestone_3\pipeline_4\new\file_sample\allegato 1-istanza di partecipazione.doc"
+JSON_INPUT_PATH = r""
+WORD_TEMPLATE_PATH = r""
 
 
 def _win_to_wsl_path(p: str) -> str:
