@@ -24,9 +24,9 @@ from ocr.ocr_engine import run_ocr
 #  CONFIGURAZIONE DIRETTA 
 # ==============================================================================
 
-INPUT_FILE   = r"C:\Users\39334\Desktop\Autocompilazione file\Millestone_2\pipeline_2\output\documento_compilato_finale.docx"      # Es: r"C:\Documenti\mio_file.pdf"  oppure  r"C:\Documenti\mio_file.doc"
-OUTPUT_PATH  = None      # None = salva automaticamente in output/<nome_file>.json
-MERGE_NEARBY = False     # True = unisce blocchi testuali vicini sulla stessa riga
+INPUT_FILE   = r""
+OUTPUT_PATH  = None     
+MERGE_NEARBY = False    
 
 # ==============================================================================
 
