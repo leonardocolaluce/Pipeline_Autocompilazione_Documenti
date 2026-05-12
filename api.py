@@ -301,11 +301,13 @@ async def preview_pages(job_id: str):
 
     pages_b64 = []
     with tempfile.TemporaryDirectory() as tmpdir:
+        pdf_file = Path(tmpdir) / "preview.pdf"
+        convert_script = PROJECT_ROOT / "m1_pipeline" / "convert_docx_to_pdf.py"
         subprocess.run([
-            "libreoffice", "--headless", "--convert-to", "pdf",
-            "--outdir", tmpdir, str(docx_path)
+            sys.executable, str(convert_script),
+            "--input-docx", str(docx_path),
+            "--out-pdf", str(pdf_file)
         ], check=True, timeout=120)
-        pdf_file = next(Path(tmpdir).glob("*.pdf"))
         doc = fitz.open(str(pdf_file))
         for pg in doc:
             pix = pg.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
