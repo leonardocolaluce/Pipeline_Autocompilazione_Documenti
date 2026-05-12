@@ -105,10 +105,27 @@ def main() -> None:
 
     compiled_output = None
     compiled_preview = None
+    compiled_output_pdf = None
+    compiled_preview_pdf = None
     if isinstance(m2_result, dict):
         compiled_output = m2_result.get("compiled_output")
         compiled_preview = m2_result.get("compiled_output_preview")
+        compiled_output_pdf = m2_result.get("compiled_output_pdf")
+        compiled_preview_pdf = m2_result.get("compiled_output_preview_pdf")
     compiled_path = Path(compiled_output) if compiled_output else (m2_out / "documento_compilato_finale.docx")
+
+    compiled_pdf_path = Path(compiled_output_pdf) if compiled_output_pdf else (m2_out / "documento_compilato_finale.pdf")
+    if compiled_pdf_path.exists():
+        compiled_dir = ROOT / "file_compilati"
+        compiled_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(compiled_pdf_path, compiled_dir / compiled_pdf_path.name)
+    
+    preview_pdf_path = Path(compiled_preview_pdf) if compiled_preview_pdf else (m2_out / "documento_compilato_preview.pdf")
+    if preview_pdf_path.exists():
+        compiled_dir = ROOT / "file_compilati"
+        compiled_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(preview_pdf_path, compiled_dir / preview_pdf_path.name)
+
     if compiled_path.exists():
         compiled_dir = ROOT / "file_compilati"
         compiled_dir.mkdir(parents=True, exist_ok=True)
