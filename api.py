@@ -302,7 +302,7 @@ async def preview_pages(job_id: str):
     pages_b64 = []
     with tempfile.TemporaryDirectory() as tmpdir:
         pdf_file = Path(tmpdir) / "preview.pdf"
-        convert_script = PROJECT_ROOT / "m1_pipeline" / "convert_docx_to_pdf.py"
+        convert_script = PROJECT_ROOT / "m1_pipeline" / "postprocessing" / "convert_docx_to_pdf.py"
         subprocess.run([
             sys.executable, str(convert_script),
             "--input-docx", str(docx_path),
