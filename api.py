@@ -85,6 +85,13 @@ def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
             venv_python=sys.executable,
         )
 
+        if isinstance(m2_result, dict) and m2_result.get("status") == "skipped":
+            jobs[job_id]["status"] = "completed"
+            jobs[job_id]["output_dir"] = str(m2_out)
+            jobs[job_id]["progress"] = "File non compilabile"
+            print(f"[JOB] File non compilabile: {m2_result}", flush=True)
+            return
+
         print(f"[M2_RESULT] {m2_result}", flush=True)
         print(f"[M2_OUTPUT_FILES] {list(m2_out.glob('*'))}", flush=True)
 
