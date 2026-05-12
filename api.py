@@ -297,11 +297,21 @@ async def preview_pages(job_id: str):
     final_pdf = output_dir / "documento_compilato_finale.pdf"
     preview_docx = output_dir / "documento_compilato_preview.docx"
     final_docx   = output_dir / "documento_compilato_finale.docx"
+    pages_b64 = []
+
+    pdf_path = preview_pdf if preview_pdf.exists() else final_pdf
+    if pdf_path.exists():
+        doc = fitz.open(str(pdf_path))
+        for pg in doc:
+            pix = pg.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+            pages_b64.append(base64.b64encode(pix.tobytes("png")).decode())
+        doc.close()
+        return {"pages": pages_b64, "total": len(pages_b64)}
+    
     docx_path = preview_docx if preview_docx.exists() else final_docx
     if not docx_path.exists():
-        raise HTTPException(status_code=404, detail="DOCX compilato non trovato")
-
-    pages_b64 = []
+        raise HTTPException(status_code=404, detail="Nessun file compilato trovato")
+    
     with tempfile.TemporaryDirectory() as tmpdir:
         pdf_file = Path(tmpdir) / "preview.pdf"
         convert_script = PROJECT_ROOT / "m1_pipeline" / "postprocessing" / "convert_docx_to_pdf.py"
