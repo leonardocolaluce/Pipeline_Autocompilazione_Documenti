@@ -954,7 +954,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Vision: detect tables (one request per page) via Mistral.")
     parser.add_argument(
         "--image-dir",
-        default=r"C:\Users\39334\Desktop\Autocompilazione file\Millestone_3\pipeline_4\output\m1_output",
+        default=r"",
         help="Cartella base che contiene una sottocartella con le immagini (nome variabile) o le immagini direttamente.",
     )
     parser.add_argument("--image-index", type=int, default=0, help="Indice (0-based) della prima immagine (default: 0).")
@@ -971,7 +971,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--anagrafica-json",
-        default=r"C:\Users\39334\Desktop\Autocompilazione file\Millestone_2\anagrafica_NIKANTE.json",
+        default=r"",
         help="Path JSON anagrafica azienda (input per compilazione).",
     )
     parser.add_argument(
