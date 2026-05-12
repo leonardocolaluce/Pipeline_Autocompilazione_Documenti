@@ -262,10 +262,11 @@ def process(
         else:
             print("[INFO] Nessuna checkbox trovata nel documento.")
 
-    # --- Estrazione tabelle (solo per file Word) ---
+    # --- Estrazione tabelle (Word + PDF nativo) ---
     tables_path = None
-    if file_type == "word":
-        tables = extract_tables(docx_path, blocks)
+    if file_type in ("word", "pdf_native"):
+        tables_input = docx_path if file_type == "word" else file_path
+        tables = extract_tables(tables_input, blocks)
         if tables and render_pdf_path:
             enrich_tables_with_pdf_layout(render_pdf_path, tables)
         if tables:
@@ -275,6 +276,7 @@ def process(
             print(f"[INFO] Tabelle salvate in: {tables_path} ({len(tables)} tabelle trovate)")
         else:
             print(f"[INFO] Nessuna tabella trovata nel documento.")
+
 
     # --- Render immagini pagina con box rossi (NUOVO) ---
     if render_pdf_path:
