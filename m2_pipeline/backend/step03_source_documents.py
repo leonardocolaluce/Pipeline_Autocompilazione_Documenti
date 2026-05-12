@@ -75,6 +75,11 @@ def resolve_source_document(base_name: str) -> Optional[Path]:
 
 
 def resolve_source_docx(base_name: str) -> Optional[Path]:
+    override = os.getenv("M2_SOURCE_DOCX_OVERRIDE", "").strip()
+    if override:
+        p = Path(override)
+        if p.exists() and p.suffix.lower() == ".docx":
+            return p
     forced = os.getenv("M2_FORCE_SOURCE_DOCX", "").strip()
     if forced:
         p = Path(forced)
