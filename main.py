@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parent
 M1_PATH = ROOT / "m1_pipeline" / "main.py"
 M2_PATH = ROOT / "m2_pipeline" / "main.py"
 
-DEFAULT_DOC_INPUT = r"C:\Users\39334\Desktop\Autocompilazione file\Millestone_3\pipeline_4\new\file_sample\Domanda di partecipazione Palazzo Nugent.docx"
-DEFAULT_DATA_JSON = r"C:\Users\39334\Desktop\Autocompilazione file\Millestone_2\anagrafica_NIKANTE.json"
+DEFAULT_DOC_INPUT = r""
+DEFAULT_DATA_JSON = r""
 DEFAULT_OUTPUT_DIR = str(ROOT / "output")
 
 
