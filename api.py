@@ -293,6 +293,8 @@ async def preview_pages(job_id: str):
         raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
 
     output_dir = Path(job["output_dir"])
+    preview_pdf = output_dir / "documento_compilato_preview.pdf"
+    final_pdf = output_dir / "documento_compilato_finale.pdf"
     preview_docx = output_dir / "documento_compilato_preview.docx"
     final_docx   = output_dir / "documento_compilato_finale.docx"
     docx_path = preview_docx if preview_docx.exists() else final_docx
