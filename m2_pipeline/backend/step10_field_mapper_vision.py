@@ -60,27 +60,39 @@ def map_bundle_fields_vision(
 
     image_dir = Path(m1_dir) / f"{base_name}_ANNOTAZIONI"
     vision_out = Path(output_dir) / VISION_MATCH_FILENAME
-    vision_payload = run_vision_mapping(
-        image_dir=image_dir,
-        data_json_path=xml_json_path,
-        out_json_path=vision_out,
-    )
-    stats = (vision_payload or {}).get("stats") or {}
-    print(f"[LLM][vision-mapping] vision_found={stats.get('filled')}/{stats.get('total')}")
+
     tables_out = Path(output_dir) / "campi_tabelle.json"
     tables_detect_out = Path(output_dir) / "tables_output.json"
     tables_filled_out = Path(output_dir) / "tables_filled_output.json"
-
-    tables_payload = run_vision_tables(
-        image_dir=image_dir,
-        data_json_path=xml_json_path,
-        out_json_path=tables_out,
-        out_json_detect_path=tables_detect_out,
-        out_json_filled_path=tables_filled_out,
-    )
-
+    
+        
+    try:
+        vision_payload = run_vision_mapping(
+            image_dir=image_dir,
+            data_json_path=xml_json_path,
+            out_json_path=vision_out,
+        )
+    except Exception as e:
+        print(f"[LLM][vision-mapping] FAILED (fallback empty) err={type(e).__name__}: {e}", flush=True)
+        vision_payload = {"stats": {"filled": 0, "total": 0}}
+    
+    stats = (vision_payload or {}).get("stats") or {}
+    print(f"[LLM][vision-mapping] vision_found={stats.get('filled')}/{stats.get('total')}", flush=True)
+    
+    try:
+        tables_payload = run_vision_tables(
+            image_dir=image_dir,
+            data_json_path=xml_json_path,
+            out_json_path=tables_out,
+            out_json_detect_path=tables_detect_out,
+            out_json_filled_path=tables_filled_out,
+        )
+    except Exception as e:
+        print(f"[LLM][vision-tables] FAILED (fallback empty) err={type(e).__name__}: {e}", flush=True)
+        tables_payload = {"stats": {"filled": 0, "total": 0}}
+    
     tstats = (tables_payload or {}).get("stats") or {}
-    print(f"[LLM][vision-tables] vision_found={tstats.get('filled')}/{tstats.get('total')}")
+    print(f"[LLM][vision-tables] vision_found={tstats.get('filled')}/{tstats.get('total')}", flush=True)
 
     mapping_path = Path(output_dir) / "campo_valore.json"
     before = _filled_counts(mapping_path) if mapping_path.exists() else {"total_fields": 0, "total_tables": 0, "filled_fields": 0, "filled_tables": 0}
