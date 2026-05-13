@@ -60,8 +60,18 @@ def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
         sys.path.insert(0, str(PROJECT_ROOT / "m1_pipeline"))
         m1_main = _load_module("m1_main", M1_PATH)
         
-        docx_source = m1_out / Path(doc_path).name
-        shutil.copy2(doc_path, docx_source)
+        src = Path(doc_path)
+
+        if src.suffix.lower() == ".doc":
+            from m1_pipeline.loaders.word_loader import convert_doc_to_docx
+            tmp_docx = Path(convert_doc_to_docx(str(src)))          # crea .docx in /tmp/...
+            docx_source = m1_out / (src.stem + ".docx")             # path finale in m1_out
+            shutil.copy2(tmp_docx, docx_source)
+            shutil.rmtree(tmp_docx.parent, ignore_errors=True)      # pulizia opzionale
+        else:
+            docx_source = m1_out / src.name
+            shutil.copy2(src, docx_source)
+
 
         m1_main.process(doc_path, output_path=None, merge_nearby=False, output_dir=str(m1_out))
 
