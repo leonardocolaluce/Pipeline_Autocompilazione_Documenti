@@ -124,7 +124,7 @@ def _get_by_path(data: Any, path: str) -> Any:
     if not path:
         return None
     cur: Any = data
-    token_re = re.compile(r"(?P<name>[A-Za-z0-9_]+)|\\[(?P<index>\\d+)\\]")
+    token_re = re.compile(r"(?P<name>[A-Za-z0-9_]+)|\[(?P<index>\d+)\]")
     for match in token_re.finditer(path):
         name = match.groupdict().get("name")
         index = match.groupdict().get("index")
@@ -153,10 +153,23 @@ def _allow_fullname_combination(data_json: Any, source_path: str) -> str | None:
     node = _get_by_path(data_json, source_path)
     if not isinstance(node, dict):
         return None
-    nome = node.get("nome")
-    cognome = node.get("cognome")
+
+    # chiavi variabili + case-insensitive (Nome/NOME/Cognome/COGNOME ecc.)
+    lowered = {str(k).strip().lower(): k for k in node.keys()}
+
+    nome_keys = ("nome", "name", "first_name", "firstname", "given_name")
+    cognome_keys = ("cognome", "surname", "last_name", "lastname", "family_name")
+
+    nome_key = next((lowered.get(k) for k in nome_keys if lowered.get(k) is not None), None)
+    cognome_key = next((lowered.get(k) for k in cognome_keys if lowered.get(k) is not None), None)
+
+    nome = node.get(nome_key) if nome_key is not None else None
+    cognome = node.get(cognome_key) if cognome_key is not None else None
+
+
     if not isinstance(nome, str) or not isinstance(cognome, str):
         return None
+
     nome = nome.strip()
     cognome = cognome.strip()
     if not nome or not cognome:
@@ -165,6 +178,49 @@ def _allow_fullname_combination(data_json: Any, source_path: str) -> str | None:
     combo1 = f"{cognome} {nome}".strip()
     combo2 = f"{nome} {cognome}".strip()
     return combo1 or combo2
+
+def _force_sottoscritto_from_person_paths(payload: dict[str, Any], data_json: Any) -> dict[str, Any]:
+    matches = payload.get("matches") or []
+    if not isinstance(matches, list):
+        return payload
+
+    # 1) trova un “person root path” usato per data/luogo nascita (stessa persona)
+    person_root = None
+    for m in matches:
+        if not isinstance(m, dict):
+            continue
+        sp = m.get("source_path")
+        if not isinstance(sp, str) or not sp:
+            continue
+        # esempi: soggetti_in_carica[0].data_nascita -> root: soggetti_in_carica[0]
+        for suffix in (".data_nascita", ".luogo_nascita", ".dataDiNascita", ".luogoDiNascita"):
+            if sp.endswith(suffix):
+                person_root = sp[: -len(suffix)]
+                break
+        if not person_root and sp.startswith("soggetti_in_carica[") and "]" in sp:
+            person_root = sp.split("]", 1)[0] + "]"
+
+        if person_root:
+            break
+
+    if not person_root:
+        return payload
+
+    forced_value = _allow_fullname_combination(data_json, person_root)
+    if not forced_value:
+        return payload
+
+    # 2) forza tutti i campi “Il sottoscritto …” che sono rimasti null
+    for m in matches:
+        if not isinstance(m, dict):
+            continue
+        label = str(m.get("label") or "").lower()
+        if "sottoscritt" in label or "dichiarante" in label:
+            if m.get("value") is None:
+                m["value"] = forced_value
+                m["source_path"] = person_root
+                m["confidence"] = float(m.get("confidence") or 0.85)
+    return payload
 
 
 def _coerce_match_output(matches_obj: dict[str, Any], data_json: Any) -> dict[str, Any]:
@@ -248,7 +304,8 @@ def run_vision_mapping(
         raise FileNotFoundError(f"JSON dati non trovato: {data_json_path}")
     data_json = json.loads(data_json_path.read_text(encoding="utf-8"))
 
-    all_matches = []
+    all_matches: list[dict[str, Any]] = []
+    page_errors: list[dict[str, Any]] = []
 
     for image_path in image_paths:
         print(f"[LLM][vision-mapping] image={image_path.name}")
@@ -282,6 +339,7 @@ def run_vision_mapping(
                                     "- Devi scegliere UNA `persona_principale` e usarla per TUTTI i campi PERSONA (nome, cognome, nato/a il, nato/a a, CF persona), a meno che il modulo dica esplicitamente un altro ruolo (es. 'Direttore tecnico').\n"
                                     "- Per campi tipo `Il sottoscritto`, `Il/La sottoscritto/a`, `dichiarante`, `legale rappresentante`, devi compilare con COGNOME + NOME della prima persona che compare nel json.\n"
                                     "- Se usi COGNOME + NOME da `soggetti_in_carica[0]`, restituisci `value` come stringa combinata.\n"
+                                    "- Per ogni campo che contiene 'sottoscritto' / 'dichiarante' / 'legale rappresentante': se `soggetti_in_carica[0].cognome` e `soggetti_in_carica[0].nome` esistono, DEVI compilare: `source_path`=\"soggetti_in_carica[0]\" e `value`=\"<cognome> <nome>\" (un solo spazio, niente titoli tipo Sig./Dott., niente spazi doppi o finali), devi ovviamente riempire con il nome della stessa persona di cui metti gli altri dati come data nascita, titolo....\n"
                                     "- Non lasciare vuoto `Il sottoscritto` se in `soggetti_in_carica[0]` esistono `cognome` e `nome` di almeno una persona.\n"
                                     "  1) LEGALE RAPPRESENTANTE | RAPPRESENTANTE LEGALE | AMMINISTRATORE UNICO | AMMINISTRATORE DELEGATO | AD | CEO | CHIEF EXECUTIVE OFFICER | PRESIDENTE | PRESIDENT | MANAGING DIRECTOR | DIRETTORE GENERALE\n"
                                     "  2) CFO | CHIEF FINANCIAL OFFICER | DIRETTORE FINANZIARIO | RESPONSABILE FINANZIARIO\n"
@@ -388,8 +446,19 @@ def run_vision_mapping(
             text = _extract_text_from_response(raw)
             match_obj, match_err = _extract_match_json(text or "")
             if match_obj is None:
-                match_obj = {"matches": []}
+                # Non interrompere l'intera pipeline per una singola pagina con risposta
+                # malformata (succede spesso dopo 429 / output troncato). Prosegui.
+                page_errors.append(
+                    {
+                        "image": image_path.name,
+                        "error": match_err or "Impossibile estrarre JSON dal modello.",
+                        "text_excerpt": (text or "")[:600],
+                    }
+                )
+                print(f"[LLM][vision-mapping] WARN: skip {image_path.name} - {match_err or 'no_json'}")
+                continue
         coerced = _coerce_match_output(match_obj, data_json)
+        coerced = _force_sottoscritto_from_person_paths(coerced, data_json)
         for match in coerced.get("matches") or []:
             match["image_page"] = image_path.name
             all_matches.append(match)
@@ -400,6 +469,7 @@ def run_vision_mapping(
             "filled": sum(1 for item in all_matches if item.get("value") is not None),
             "total": len(all_matches),
         },
+        "errors": page_errors,
     }
 
 
