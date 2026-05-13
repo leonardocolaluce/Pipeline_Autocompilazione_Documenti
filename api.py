@@ -313,40 +313,111 @@ async def preview_pages(job_id: str):
         raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
 
     output_dir = Path(job["output_dir"])
-    preview_pdf = output_dir / "documento_compilato_preview.pdf"
-    final_pdf = output_dir / "documento_compilato_finale.pdf"
     preview_docx = output_dir / "documento_compilato_preview.docx"
     final_docx   = output_dir / "documento_compilato_finale.docx"
-    pages_b64 = []
-
-    pdf_path = preview_pdf if preview_pdf.exists() else final_pdf
-    if pdf_path.exists():
-        doc = fitz.open(str(pdf_path))
-        for pg in doc:
-            pix = pg.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-            pages_b64.append(base64.b64encode(pix.tobytes("png")).decode())
-        doc.close()
-        return {"pages": pages_b64, "total": len(pages_b64)}
-    
     docx_path = preview_docx if preview_docx.exists() else final_docx
     if not docx_path.exists():
-        raise HTTPException(status_code=404, detail="Nessun file compilato trovato")
-    
-    with tempfile.TemporaryDirectory() as tmpdir:
-        pdf_file = Path(tmpdir) / "preview.pdf"
-        convert_script = PROJECT_ROOT / "m1_pipeline" / "postprocessing" / "convert_docx_to_pdf.py"
-        subprocess.run([
-            sys.executable, str(convert_script),
-            "--input-docx", str(docx_path),
-            "--out-pdf", str(pdf_file)
-        ], check=True, timeout=120)
-        doc = fitz.open(str(pdf_file))
-        for pg in doc:
-            pix = pg.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
-            pages_b64.append(base64.b64encode(pix.tobytes("png")).decode())
-        doc.close()
+        raise HTTPException(status_code=404, detail="DOCX compilato non trovato")
 
-    return {"pages": pages_b64, "total": len(pages_b64)}
+    print(f"[PREVIEW] job_id={job_id} output_dir={output_dir}", flush=True)
+    print(f"[PREVIEW] docx_path={docx_path} size={docx_path.stat().st_size}", flush=True)
+
+    pages_b64: list[str] = []
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_p = Path(tmpdir)
+        pdf_file = tmpdir_p / "preview.pdf"
+        convert_script = PROJECT_ROOT / "m1_pipeline" / "postprocessing" / "convert_docx_to_pdf.py"
+
+        print(f"[PREVIEW] tmpdir={tmpdir}", flush=True)
+        print(f"[PREVIEW] convert_script={convert_script} exists={convert_script.exists()}", flush=True)
+
+        # 1) Tenta Microsoft Graph -> PDF
+        try:
+            cmd = [
+                sys.executable, str(convert_script),
+                "--input-docx", str(docx_path),
+                "--out-pdf", str(pdf_file),
+                #"--graph-only",
+            ]
+            print(f"[PREVIEW][GRAPH] start cmd={cmd}", flush=True)
+
+            res = subprocess.run(
+                cmd,
+                check=True,
+                timeout=120,
+                capture_output=True,
+                text=True,
+            )
+            if res.stdout:
+                print(f"[PREVIEW][GRAPH] stdout(last4k)=\n{res.stdout[-4000:]}", flush=True)
+            if res.stderr:
+                print(f"[PREVIEW][GRAPH] stderr(last4k)=\n{res.stderr[-4000:]}", flush=True)
+
+            print(f"[PREVIEW][GRAPH] ok pdf={pdf_file} exists={pdf_file.exists()}", flush=True)
+            if not pdf_file.exists():
+                raise RuntimeError("Graph ha terminato senza generare il PDF atteso")
+
+            doc = fitz.open(str(pdf_file))
+            for pg in doc:
+                pix = pg.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+                pages_b64.append(base64.b64encode(pix.tobytes("png")).decode("ascii"))
+            doc.close()
+
+            print(f"[PREVIEW][GRAPH] rendered_pages={len(pages_b64)}", flush=True)
+            return {"pages": pages_b64, "total": len(pages_b64)}
+
+        except subprocess.CalledProcessError as e:
+            out = (e.stdout or "")[-4000:]
+            err = (e.stderr or "")[-4000:]
+            print(f"[PREVIEW][GRAPH] FAILED rc={e.returncode}", flush=True)
+            if out:
+                print(f"[PREVIEW][GRAPH] stdout(last4k)=\n{out}", flush=True)
+            if err:
+                print(f"[PREVIEW][GRAPH] stderr(last4k)=\n{err}", flush=True)
+
+        except Exception as e:
+            print(f"[PREVIEW][GRAPH] FAILED exc={type(e).__name__}: {e}", flush=True)
+
+        # 2) Fallback: “foto” pagine (LibreOffice -> PNG)
+        try:
+            lo_cmd = [
+                "libreoffice",
+                "--headless",
+                "--convert-to",
+                "png",
+                "--outdir",
+                tmpdir,
+                str(docx_path),
+            ]
+            print(f"[PREVIEW][LO->PNG] start cmd={lo_cmd}", flush=True)
+
+            res = subprocess.run(
+                lo_cmd,
+                check=True,
+                timeout=180,
+                capture_output=True,
+                text=True,
+            )
+            if res.stdout:
+                print(f"[PREVIEW][LO->PNG] stdout(last4k)=\n{res.stdout[-4000:]}", flush=True)
+            if res.stderr:
+                print(f"[PREVIEW][LO->PNG] stderr(last4k)=\n{res.stderr[-4000:]}", flush=True)
+
+            png_files = sorted(tmpdir_p.glob("*.png"))
+            print(f"[PREVIEW][LO->PNG] png_count={len(png_files)}", flush=True)
+            if not png_files:
+                raise RuntimeError("LibreOffice non ha generato PNG")
+
+            pages_b64 = [base64.b64encode(p.read_bytes()).decode("ascii") for p in png_files]
+            print(f"[PREVIEW][LO->PNG] ok pages={len(pages_b64)}", flush=True)
+            return {"pages": pages_b64, "total": len(pages_b64)}
+
+        except Exception as e:
+            print(f"[PREVIEW][LO->PNG] FAILED exc={type(e).__name__}: {e}", flush=True)
+            raise HTTPException(status_code=500, detail="Preview fallita: Graph KO e LibreOffice KO")
+
+
 
 @app.get("/health")
 async def health():
