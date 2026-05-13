@@ -395,7 +395,7 @@ def _compile_with_xml(*, src_docx: Path, out_docx: Path, rows: List[Row]) -> Non
 
     _register_docx_namespaces(doc_xml)
     root = ET.fromstring(doc_xml)
-    root.set(f"{{{MC_NS}}}Ignorable", "w14")
+    # root.set(f"{{{MC_NS}}}Ignorable", "w14")
 
     anchors = _paragraph_page_anchors(root)
     page_width = _page_width(root)
