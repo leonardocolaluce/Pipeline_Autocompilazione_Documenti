@@ -86,13 +86,24 @@ def main() -> None:
         docx_source = m1_out / doc_input.name
         shutil.copy2(doc_input, docx_source)
 
+    # DEBUG: forza M2 a usare sempre un DOCX valido (soprattutto quando l'input era .doc)
+    if docx_source and docx_source.exists() and docx_source.suffix.lower() == ".docx":
+        os.environ["M2_SOURCE_DOCX_OVERRIDE"] = str(docx_source)
+        print(f"[DEBUG] Forzo M2_SOURCE_DOCX_OVERRIDE={os.environ['M2_SOURCE_DOCX_OVERRIDE']}")
+    else:
+        print(f"[DEBUG] Nessun docx_source valido per override: docx_source={docx_source}")
+
+
     m1_main.process(str(doc_input), output_path=None, merge_nearby=False, output_dir=str(m1_out))
 
     # --- Milestone 2 ---
     sys.path.insert(0, str(ROOT / "m2_pipeline"))
     os.environ["M2_EXTRA_DOCX_DIRS"] = str(m1_out)
     if source_docx and not source_docx.exists(): raise FileNotFoundError(f"DOCX template non trovato: {source_docx}")
-    if source_docx: os.environ["M2_SOURCE_DOCX_OVERRIDE"] = str(source_docx)
+    if source_docx and source_docx.suffix.lower() == ".docx":
+        os.environ["M2_SOURCE_DOCX_OVERRIDE"] = str(source_docx)
+        print(f"[DEBUG] Override da --source-docx: {os.environ['M2_SOURCE_DOCX_OVERRIDE']}")
+
     m2_main = _load_module("m2_main", M2_PATH)
     os.environ["M2_CLASSIFY_INPUT_DOC"] = str(doc_input)
     m2_result = m2_main.run_all(
