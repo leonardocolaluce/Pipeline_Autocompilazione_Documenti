@@ -142,6 +142,21 @@ def _fit_font_size_to_box(text: str, width: float, height: float, start_fs: int)
         fs -= 1
     return max(6, fs)
 
+def _normalize_docx_with_libreoffice(docx_path: Path) -> None:
+    # Risalva il DOCX con LibreOffice per normalizzare XML/VML (spesso rimuove il warning di Word).
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_p = Path(tmpdir)
+        subprocess.run(
+            ["libreoffice", "--headless", "--convert-to", "docx", "--outdir", str(tmpdir_p), str(docx_path)],
+            check=True,
+            timeout=180,
+        )
+        candidates = list(tmpdir_p.glob("*.docx"))
+        if not candidates:
+            return
+        normalized = candidates[0]
+        shutil.copy2(normalized, docx_path)
+
 
 def _append_vml_textbox(
     paragraph: ET.Element,
@@ -457,6 +472,11 @@ def write_docx_from_mapping(source_docx: str | Path, mapping_json: str | Path, o
 
     if not used_com:
         _compile_with_xml(src_docx=tmp_src, out_docx=out_docx, rows=rows)
+        try:
+            _normalize_docx_with_libreoffice(out_docx)
+        except Exception:
+            pass
+
 
     try:
         tmp_src.unlink(missing_ok=True)  # type: ignore[call-arg]
