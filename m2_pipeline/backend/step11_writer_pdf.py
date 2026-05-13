@@ -70,7 +70,7 @@ def write_pdf_from_answers_json(
     answers_json: str | Path,
     out_pdf: str | Path,
     *,
-    color_rgb: tuple[float, float, float] = (0, 0, 1),  # blue
+    color_rgb: tuple[float, float, float] = (0, 0, 0),  # black
     add_white_bg: bool = False,
 ) -> dict[str, Any]:
     """
@@ -129,7 +129,7 @@ def write_pdf_from_answers_json(
                 fontsize=font_size,
                 fontname="helv",
                 color=color_rgb,
-                align=0,  # left
+                align=1, 
                 overlay=True,
             )
             if rc >= 0:
