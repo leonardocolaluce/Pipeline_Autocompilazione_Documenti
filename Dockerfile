@@ -3,7 +3,7 @@ FROM python:3.11-slim
 ENV PYTHONUNBUFFERED=1
 WORKDIR /app
 
-RUN echo "deb http://deb.debian.org/debian trixie main contrib" > /etc/apt/sources.list \
+RUN echo "deb http://deb.debian.org/debian trixie main contrib" >> /etc/apt/sources.list \
     && apt-get update \
     && echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
     && apt-get install -y --no-install-recommends \
@@ -41,8 +41,13 @@ RUN echo "deb http://deb.debian.org/debian trixie main contrib" > /etc/apt/sourc
 COPY requirements.txt .
 RUN python -m pip install --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
+    
+COPY fonts/ /usr/share/fonts/truetype/custom/
+RUN fc-cache -f -v
 
 COPY . .
+
+
 
 # Crea venv per OCR con PaddleOCR
 RUN python -m venv paddle311
