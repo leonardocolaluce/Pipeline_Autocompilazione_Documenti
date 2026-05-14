@@ -14,6 +14,7 @@ import subprocess
 import tempfile
 import base64
 import fitz 
+import re
 
 app = FastAPI(title="Pipeline Autocompilazione")
 
@@ -34,6 +35,33 @@ def _load_module(module_name: str, path: Path):
     spec.loader.exec_module(module)
     return module
 
+def _safe_download_stem(job: Dict[str, Any]) -> str:
+    name = str(job.get("doc_name") or "documento")
+    stem = Path(name).stem
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", stem).strip("._-")
+    return (stem[:120] or "documento")
+
+
+def _count_fields_and_tables(mapping_path: Path) -> tuple[int, int]:
+    try:
+        payload = json.loads(mapping_path.read_text(encoding="utf-8"))
+    except Exception:
+        return 0, 0
+
+    rows = payload.get("rows") or []
+    total = 0
+    filled = 0
+
+    for row in rows:
+        item_type = str(row.get("item_type", "")).strip()
+        if item_type not in {"field", "table_cell"}:
+            continue
+        total += 1
+        ans = str(row.get("answer", "") or "").strip()
+        if ans and ans != "N/D":
+            filled += 1
+
+    return total, filled
 
 def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
     """Esegue la pipeline in background."""
@@ -105,10 +133,29 @@ def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
         print(f"[M2_RESULT] {m2_result}", flush=True)
         print(f"[M2_OUTPUT_FILES] {list(m2_out.glob('*'))}", flush=True)
 
+        # Log campi/tabelle (escludi checkbox): usa mapping provvisorio se presente
+        prov_map = m2_out / "campo_valore_provvisorio.json"
+        fallback_map = m2_out / "campo_valore.json"
+        mapping_path = prov_map if prov_map.exists() else fallback_map
+
+        fields_msg = None
+        if mapping_path.exists():
+            total, filled = _count_fields_and_tables(mapping_path)
+            fields_msg = f"Campi totali: {total} | Campi compilati: {filled}"
+            print(f"[FIELDS] {fields_msg} mapping={mapping_path}", flush=True)
+        else:
+            print("[FIELDS] mapping non trovato (nessun conteggio campi)", flush=True)
+
         jobs[job_id]["progress"] = "M2 completato. Finalizzazione..."
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["output_dir"] = str(m2_out)
-        jobs[job_id]["progress"] = "Pipeline completata con successo"
+
+        final_msg = "Pipeline completata con successo"
+        if fields_msg:
+            final_msg = f"{final_msg} | {fields_msg}"
+        jobs[job_id]["progress"] = final_msg
+
+
 
     except Exception as e:
         jobs[job_id]["status"] = "failed"
@@ -236,11 +283,13 @@ async def download(job_id: str, variant: str = Query(default="final", pattern="^
     if selected_docx is None or not selected_docx.exists():
         raise HTTPException(status_code=500, detail="DOCX compilato non trovato")
     
+    stem = _safe_download_stem(job)
     return FileResponse(
         path=selected_docx,
-        filename=f"{variant}_{job_id}.docx",
-        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        filename=f"{variant}_{stem}.docx",
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     )
+
 
 
 @app.get("/download-mapping/{job_id}")
@@ -264,11 +313,13 @@ async def download_mapping(job_id: str, variant: str = Query(default="provvisori
     if not mapping_path.exists():
         raise HTTPException(status_code=404, detail=f"Mapping {variant} non trovato")
 
+    stem = _safe_download_stem(job)
     return FileResponse(
         path=mapping_path,
-        filename=f"mapping_{variant}_{job_id}.json",
+        filename=f"mapping_{variant}_{stem}.json",
         media_type="application/json",
     )
+
 
 @app.get("/download-m1/{job_id}")
 async def download_m1_output(job_id: str):
@@ -298,11 +349,13 @@ async def download_m1_output(job_id: str):
             if path.is_file():
                 z.write(path, path.relative_to(m1_dir))
 
+    stem = _safe_download_stem(job)
     return FileResponse(
         path=zip_path,
-        filename=f"m1_output_{job_id}.zip",
+        filename=f"m1_output_{stem}.zip",
         media_type="application/zip",
     )
+
 
 @app.get("/preview-pages/{job_id}")
 async def preview_pages(job_id: str):
