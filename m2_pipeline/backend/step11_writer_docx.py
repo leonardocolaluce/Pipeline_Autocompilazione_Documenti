@@ -484,7 +484,7 @@ def compile_overlay_xml_only(*, src_docx: Path, json_path: Path, out_docx: Path)
             height=height,
             text=r.text,
             font_size=fs,
-            color_hex="FF0000",
+            color_hex="000000",
         )
         applied += 1
 
