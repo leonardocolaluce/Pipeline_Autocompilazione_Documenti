@@ -238,7 +238,11 @@ async def get_status(job_id: str):
 
 
 @app.get("/download/{job_id}")
-async def download(job_id: str, variant: str = Query(default="final", pattern="^(final|preview|any)$")):
+async def download(
+    job_id: str,
+    variant: str = Query(default="final", pattern="^(final|preview|any)$"),
+    format: str = Query(default="auto", pattern="^(auto|docx|pdf)$"),
+):
     """
     Scarica il DOCX compilato.
 
@@ -258,6 +262,40 @@ async def download(job_id: str, variant: str = Query(default="final", pattern="^
         raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
     
     output_dir = Path(job["output_dir"])
+    # Se richiesto (o in auto) e ci sono PDF, scarica PDF
+    preview_pdf = output_dir / "documento_compilato_preview.pdf"
+    final_pdf   = output_dir / "documento_compilato_finale.pdf"
+
+    if format in ("auto", "pdf"):
+        selected_pdf: Path | None = None
+        if variant == "preview":
+            selected_pdf = preview_pdf if preview_pdf.exists() else None
+            if selected_pdf is None:
+                raise HTTPException(status_code=404, detail="PDF preview non trovato")
+        elif variant == "final":
+            selected_pdf = final_pdf if final_pdf.exists() else None
+            if selected_pdf is None:
+                raise HTTPException(status_code=404, detail="PDF finale non trovato")
+        else:  # any
+            if preview_pdf.exists():
+                selected_pdf = preview_pdf
+            elif final_pdf.exists():
+                selected_pdf = final_pdf
+            else:
+                pdf_files = list(output_dir.glob("*.pdf"))
+                selected_pdf = pdf_files[0] if pdf_files else None
+
+        if selected_pdf is not None and selected_pdf.exists():
+            stem = _safe_download_stem(job)
+            return FileResponse(
+                path=selected_pdf,
+                filename=f"{variant}_{stem}.pdf",
+                media_type="application/pdf",
+            )
+
+        # Se format=pdf esplicito e non c'e' nulla, fermati qui
+        if format == "pdf":
+            raise HTTPException(status_code=404, detail="PDF compilato non trovato")
     
     final_docx = output_dir / "documento_compilato_finale.docx"
     preview_docx = output_dir / "documento_compilato_preview.docx"
@@ -309,6 +347,7 @@ async def download_mapping(job_id: str, variant: str = Query(default="provvisori
         raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
 
     output_dir = Path(job["output_dir"])
+
     mapping_path = output_dir / ("campo_valore_provvisorio.json" if variant == "provvisorio" else "campo_valore_finale.json")
     if not mapping_path.exists():
         raise HTTPException(status_code=404, detail=f"Mapping {variant} non trovato")
@@ -366,6 +405,25 @@ async def preview_pages(job_id: str):
         raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
 
     output_dir = Path(job["output_dir"])
+
+    # --- NEW: preview da PDF se presente (caso input PDF) ---
+    preview_pdf = output_dir / "documento_compilato_preview.pdf"
+    final_pdf   = output_dir / "documento_compilato_finale.pdf"
+    pdf_path = preview_pdf if preview_pdf.exists() else final_pdf
+
+    if pdf_path.exists():
+        print(f"[PREVIEW] job_id={job_id} output_dir={output_dir}", flush=True)
+        print(f"[PREVIEW] pdf_path={pdf_path} size={pdf_path.stat().st_size}", flush=True)
+
+        pages_b64: list[str] = []
+        doc = fitz.open(str(pdf_path))
+        for pg in doc:
+            pix = pg.get_pixmap(matrix=fitz.Matrix(2.0, 2.0))
+            pages_b64.append(base64.b64encode(pix.tobytes("png")).decode("ascii"))
+        doc.close()
+
+        return {"pages": pages_b64, "total": len(pages_b64)}
+    
     preview_docx = output_dir / "documento_compilato_preview.docx"
     final_docx   = output_dir / "documento_compilato_finale.docx"
     docx_path = preview_docx if preview_docx.exists() else final_docx
