@@ -511,47 +511,13 @@ async def preview_pages(job_id: str):
                 print(f"[PREVIEW][GRAPH] stdout(last4k)=\n{out}", flush=True)
             if err:
                 print(f"[PREVIEW][GRAPH] stderr(last4k)=\n{err}", flush=True)
+            print("[PREVIEW] Graph KO -> preview disabilitata (no fallback). Usa /download.", flush=True)
+            return {"pages": [], "total": 0, "reason": "graph_failed"}
 
         except Exception as e:
             print(f"[PREVIEW][GRAPH] FAILED exc={type(e).__name__}: {e}", flush=True)
-
-        # 2) Fallback: “foto” pagine (LibreOffice -> PNG)
-        try:
-            lo_cmd = [
-                "libreoffice",
-                "--headless",
-                "--convert-to",
-                "png",
-                "--outdir",
-                tmpdir,
-                str(docx_path),
-            ]
-            print(f"[PREVIEW][LO->PNG] start cmd={lo_cmd}", flush=True)
-
-            res = subprocess.run(
-                lo_cmd,
-                check=True,
-                timeout=180,
-                capture_output=True,
-                text=True,
-            )
-            if res.stdout:
-                print(f"[PREVIEW][LO->PNG] stdout(last4k)=\n{res.stdout[-4000:]}", flush=True)
-            if res.stderr:
-                print(f"[PREVIEW][LO->PNG] stderr(last4k)=\n{res.stderr[-4000:]}", flush=True)
-
-            png_files = sorted(tmpdir_p.glob("*.png"))
-            print(f"[PREVIEW][LO->PNG] png_count={len(png_files)}", flush=True)
-            if not png_files:
-                raise RuntimeError("LibreOffice non ha generato PNG")
-
-            pages_b64 = [base64.b64encode(p.read_bytes()).decode("ascii") for p in png_files]
-            print(f"[PREVIEW][LO->PNG] ok pages={len(pages_b64)}", flush=True)
-            return {"pages": pages_b64, "total": len(pages_b64)}
-
-        except Exception as e:
-            print(f"[PREVIEW][LO->PNG] FAILED exc={type(e).__name__}: {e}", flush=True)
-            raise HTTPException(status_code=500, detail="Preview fallita: Graph KO e LibreOffice KO")
+            print("[PREVIEW] Graph KO -> preview disabilitata (no fallback). Usa /download.", flush=True)
+            return {"pages": [], "total": 0, "reason": "graph_failed"}
 
 
 
