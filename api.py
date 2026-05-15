@@ -69,11 +69,6 @@ def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
         jobs[job_id]["status"] = "running"
         jobs[job_id]["progress"] = "Avviamento M1..."
 
-        old_output = PROJECT_ROOT / "output"
-        print(f"[CLEANUP] Cancello output precedente: {old_output} exists={old_output.exists()}", flush=True)
-        shutil.rmtree(old_output, ignore_errors=True)
-        print(f"[CLEANUP] Output cancellato: exists={old_output.exists()}", flush=True)
-
         output_root = PROJECT_ROOT / "output" / job_id
         print(f"[JOB] Nuovo output_root: {output_root}", flush=True)
 
@@ -226,15 +221,24 @@ async def get_status(job_id: str):
     Returns:
         {"job_id": "uuid", "status": "running|completed|failed", "progress": "..."}
     """
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job non trovato")
-    
-    return {
-        "job_id": job_id,
-        "status": jobs[job_id]["status"],
-        "progress": jobs[job_id].get("progress", ""),
-        "error": jobs[job_id].get("error"),
-    }
+    # Prefer in-memory status when available (single instance/worker).
+    if job_id in jobs:
+        return {
+            "job_id": job_id,
+            "status": jobs[job_id]["status"],
+            "progress": jobs[job_id].get("progress", ""),
+            "error": jobs[job_id].get("error"),
+        }
+
+    # Fallback stateless: if outputs exist on disk, treat as completed.
+    output_dir = PROJECT_ROOT / "output" / job_id / "m2_output"
+    if output_dir.exists():
+        if (output_dir / "documento_compilato_preview.docx").exists() or (output_dir / "documento_compilato_finale.docx").exists():
+            return {"job_id": job_id, "status": "completed", "progress": "Completato (filesystem)", "error": None}
+        if (output_dir / "documento_compilato_preview.pdf").exists() or (output_dir / "documento_compilato_finale.pdf").exists():
+            return {"job_id": job_id, "status": "completed", "progress": "Completato (filesystem)", "error": None}
+
+    raise HTTPException(status_code=404, detail="Job non trovato")
 
 
 @app.get("/download/{job_id}")
@@ -254,14 +258,11 @@ async def download(
     Returns:
         File DOCX
     """
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job non trovato")
-    
-    job = jobs[job_id]
-    if job["status"] != "completed":
-        raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
-    
-    output_dir = Path(job["output_dir"])
+    output_dir = PROJECT_ROOT / "output" / job_id / "m2_output"
+    if not output_dir.exists():
+        raise HTTPException(status_code=404, detail="Output job non trovato (job non finito)")
+
+    job = jobs.get(job_id)  # opzionale: solo per filename più leggibile
     # Se richiesto (o in auto) e ci sono PDF, scarica PDF
     preview_pdf = output_dir / "documento_compilato_preview.pdf"
     final_pdf   = output_dir / "documento_compilato_finale.pdf"
@@ -286,7 +287,7 @@ async def download(
                 selected_pdf = pdf_files[0] if pdf_files else None
 
         if selected_pdf is not None and selected_pdf.exists():
-            stem = _safe_download_stem(job)
+            stem = _safe_download_stem(job) if job else job_id
             return FileResponse(
                 path=selected_pdf,
                 filename=f"{variant}_{stem}.pdf",
@@ -321,7 +322,7 @@ async def download(
     if selected_docx is None or not selected_docx.exists():
         raise HTTPException(status_code=500, detail="DOCX compilato non trovato")
     
-    stem = _safe_download_stem(job)
+    stem = _safe_download_stem(job) if job else job_id
     return FileResponse(
         path=selected_docx,
         filename=f"{variant}_{stem}.docx",
@@ -339,20 +340,16 @@ async def download_mapping(job_id: str, variant: str = Query(default="provvisori
       - variant=provvisorio -> campo_valore_provvisorio.json (default)
       - variant=finale      -> campo_valore_finale.json
     """
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job non trovato")
-
-    job = jobs[job_id]
-    if job["status"] != "completed":
-        raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
-
-    output_dir = Path(job["output_dir"])
+    output_dir = PROJECT_ROOT / "output" / job_id / "m2_output"
+    if not output_dir.exists():
+        raise HTTPException(status_code=404, detail="Output job non trovato (job non finito)")
 
     mapping_path = output_dir / ("campo_valore_provvisorio.json" if variant == "provvisorio" else "campo_valore_finale.json")
     if not mapping_path.exists():
         raise HTTPException(status_code=404, detail=f"Mapping {variant} non trovato")
 
-    stem = _safe_download_stem(job)
+    job = jobs.get(job_id)
+    stem = _safe_download_stem(job) if job else job_id
     return FileResponse(
         path=mapping_path,
         filename=f"mapping_{variant}_{stem}.json",
@@ -365,20 +362,12 @@ async def download_m1_output(job_id: str):
     """
     Scarica tutta la cartella m1_output del job in ZIP.
     """
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job non trovato")
-
-    job = jobs[job_id]
-    if job["status"] != "completed":
-        raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
-
-    m2_dir = Path(job["output_dir"])
-    m1_dir = m2_dir.parent / "m1_output"
+    m1_dir = PROJECT_ROOT / "output" / job_id / "m1_output"
 
     if not m1_dir.exists():
         raise HTTPException(status_code=404, detail="Cartella m1_output non trovata")
 
-    zip_path = m2_dir.parent / "m1_output_debug.zip"
+    zip_path = m1_dir.parent / "m1_output_debug.zip"
 
     if zip_path.exists():
         zip_path.unlink()
@@ -388,7 +377,8 @@ async def download_m1_output(job_id: str):
             if path.is_file():
                 z.write(path, path.relative_to(m1_dir))
 
-    stem = _safe_download_stem(job)
+    job = jobs.get(job_id)
+    stem = _safe_download_stem(job) if job else job_id
     return FileResponse(
         path=zip_path,
         filename=f"m1_output_{stem}.zip",
@@ -398,13 +388,9 @@ async def download_m1_output(job_id: str):
 
 @app.get("/preview-pages/{job_id}")
 async def preview_pages(job_id: str):
-    if job_id not in jobs:
-        raise HTTPException(status_code=404, detail="Job non trovato")
-    job = jobs[job_id]
-    if job["status"] != "completed":
-        raise HTTPException(status_code=400, detail=f"Job non completato: {job['status']}")
-
-    output_dir = Path(job["output_dir"])
+    output_dir = PROJECT_ROOT / "output" / job_id / "m2_output"
+    if not output_dir.exists():
+        raise HTTPException(status_code=404, detail="Output job non trovato (job non finito)")
 
     # --- NEW: preview da PDF se presente (caso input PDF) ---
     preview_pdf = output_dir / "documento_compilato_preview.pdf"
