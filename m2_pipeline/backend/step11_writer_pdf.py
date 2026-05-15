@@ -72,6 +72,9 @@ def write_pdf_from_answers_json(
     *,
     color_rgb: tuple[float, float, float] = (0, 0, 0),  # black
     add_white_bg: bool = False,
+    min_box_height: float = 12.0,
+    min_box_width: float = 80.0,
+    pad_right: float = 10.0,
 ) -> dict[str, Any]:
     """
     Overlays answers onto an existing PDF using bbox/page coordinates.
@@ -101,6 +104,10 @@ def write_pdf_from_answers_json(
     written = 0
     skipped = 0
     overflow = 0
+    adjusted = 0
+
+    # Force black text for PDF overlays (ignore caller color overrides).
+    color_rgb = (0, 0, 0)
 
     for row in filled_rows:
         page_no = _page(row)
@@ -116,12 +123,42 @@ def write_pdf_from_answers_json(
         page = doc.load_page(page_no - 1)
         rect = fitz.Rect(bbox[0], bbox[1], bbox[2], bbox[3])
 
+        # Many "field" bboxes coming from line markers are extremely thin (≈1pt height),
+        # which makes insert_textbox fail. Expand to a reasonable rectangle while keeping
+        # the same anchor (x0) and staying inside the page.
+        page_rect = page.rect
+        orig_rect = rect
+
+        target_height = max(float(min_box_height), float(rect.height))
+        target_width = max(float(min_box_width), float(rect.width))
+
+        # Try to approximate the width needed for the text (empirical average char width).
+        # Clamp to the printable area.
+        est_width = max(target_width, min(page_rect.width * 0.92, max(0.0, len(text)) * 5.5))
+        target_width = max(target_width, est_width)
+
+        x0 = float(rect.x0)
+        x1 = min(float(page_rect.x1) - 2.0, x0 + float(target_width) + float(pad_right))
+        if x1 <= x0 + 2.0:
+            x1 = min(float(page_rect.x1) - 2.0, x0 + 2.0)
+
+        # Treat the original bbox as an underline: place the box above it.
+        y1 = min(float(page_rect.y1) - 2.0, float(rect.y1) + 2.0)
+        y0 = max(float(page_rect.y0) + 2.0, y1 - float(target_height))
+        if y1 <= y0 + 2.0:
+            y0 = max(float(page_rect.y0) + 2.0, float(rect.y0) - float(target_height))
+            y1 = min(float(page_rect.y1) - 2.0, y0 + float(target_height))
+
+        rect = fitz.Rect(x0, y0, x1, y1)
+        if rect != orig_rect:
+            adjusted += 1
+
         if add_white_bg:
             page.draw_rect(rect, color=None, fill=(1, 1, 1), overlay=True)
 
         # Try to fit text by decreasing font size.
         rc = 1
-        font_size = 10
+        font_size = 11
         while font_size >= 6:
             rc = page.insert_textbox(
                 rect,
@@ -129,7 +166,7 @@ def write_pdf_from_answers_json(
                 fontsize=font_size,
                 fontname="helv",
                 color=color_rgb,
-                align=1, 
+                align=0,  # left
                 overlay=True,
             )
             if rc >= 0:
@@ -138,6 +175,18 @@ def write_pdf_from_answers_json(
 
         if rc < 0:
             overflow += 1
+            # Fallback: draw a single line of text; may overflow horizontally but it becomes visible.
+            try:
+                page.insert_text(
+                    (rect.x0, rect.y1 - 2.0),
+                    text,
+                    fontsize=6,
+                    fontname="helv",
+                    color=color_rgb,
+                    overlay=True,
+                )
+            except Exception:
+                pass
         written += 1
 
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
@@ -152,5 +201,5 @@ def write_pdf_from_answers_json(
         "written": written,
         "skipped": skipped,
         "overflow": overflow,
+        "adjusted_boxes": adjusted,
     }
-
