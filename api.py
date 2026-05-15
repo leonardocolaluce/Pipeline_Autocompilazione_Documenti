@@ -262,20 +262,57 @@ async def download(
     if not output_dir.exists():
         raise HTTPException(status_code=404, detail="Output job non trovato (job non finito)")
 
-    job = jobs.get(job_id)  # opzionale: solo per filename più leggibile
-    # Se richiesto (o in auto) e ci sono PDF, scarica PDF
-    preview_pdf = output_dir / "documento_compilato_preview.pdf"
-    final_pdf   = output_dir / "documento_compilato_finale.pdf"
+    job = jobs.get(job_id)  # può essere None in multi-worker / multi-instance
+    try:
+        out_files = sorted([p.name for p in output_dir.glob("*") if p.is_file()])
+    except Exception:
+        out_files = []
 
-    if format in ("auto", "pdf"):
+    # --- DEBUG ---
+    print(
+        f"[DOWNLOAD] job_id={job_id} variant={variant} format={format} output_dir={output_dir} job_in_mem={job is not None}",
+        flush=True,
+    )
+    if out_files:
+        print(f"[DOWNLOAD] m2_output_files={out_files}", flush=True)
+    else:
+        print("[DOWNLOAD] m2_output_files=<empty>", flush=True)
+
+    # Decide "input type":
+    # - se abbiamo il job in RAM usiamo l'estensione del file caricato
+    # - altrimenti inferiamo dal fatto che esista almeno un PDF in m2_output
+    input_is_pdf = False
+    if job is not None:
+        doc_name = str(job.get("doc_name") or "")
+        input_is_pdf = doc_name.lower().endswith(".pdf")
+    else:
+        input_is_pdf = any(name.lower().endswith(".pdf") for name in out_files)
+
+    print(f"[DOWNLOAD] inferred_input_is_pdf={input_is_pdf}", flush=True)
+
+    # In modalità auto: PDF input -> PDF; Word input -> DOCX
+    effective_format = format
+    if format == "auto":
+        effective_format = "pdf" if input_is_pdf else "docx"
+    print(f"[DOWNLOAD] effective_format={effective_format}", flush=True)
+
+    preview_pdf = output_dir / "documento_compilato_preview.pdf"
+    final_pdf = output_dir / "documento_compilato_finale.pdf"
+    preview_docx = output_dir / "documento_compilato_preview.docx"
+    final_docx = output_dir / "documento_compilato_finale.docx"
+
+    if effective_format == "pdf":
+        # PDF branch (serve PDF only)
         selected_pdf: Path | None = None
         if variant == "preview":
             selected_pdf = preview_pdf if preview_pdf.exists() else None
             if selected_pdf is None:
+                print(f"[DOWNLOAD][PDF] preview missing at {preview_pdf}", flush=True)
                 raise HTTPException(status_code=404, detail="PDF preview non trovato")
         elif variant == "final":
             selected_pdf = final_pdf if final_pdf.exists() else None
             if selected_pdf is None:
+                print(f"[DOWNLOAD][PDF] final missing at {final_pdf}", flush=True)
                 raise HTTPException(status_code=404, detail="PDF finale non trovato")
         else:  # any
             if preview_pdf.exists():
@@ -283,32 +320,32 @@ async def download(
             elif final_pdf.exists():
                 selected_pdf = final_pdf
             else:
-                pdf_files = list(output_dir.glob("*.pdf"))
+                pdf_files = sorted(output_dir.glob("*.pdf"))
                 selected_pdf = pdf_files[0] if pdf_files else None
 
-        if selected_pdf is not None and selected_pdf.exists():
-            stem = _safe_download_stem(job) if job else job_id
-            return FileResponse(
-                path=selected_pdf,
-                filename=f"{variant}_{stem}.pdf",
-                media_type="application/pdf",
-            )
-
-        # Se format=pdf esplicito e non c'e' nulla, fermati qui
-        if format == "pdf":
+        if selected_pdf is None or not selected_pdf.exists():
+            print("[DOWNLOAD][PDF] no pdf candidate found", flush=True)
             raise HTTPException(status_code=404, detail="PDF compilato non trovato")
-    
-    final_docx = output_dir / "documento_compilato_finale.docx"
-    preview_docx = output_dir / "documento_compilato_preview.docx"
 
+        stem = _safe_download_stem(job) if job else job_id
+        print(f"[DOWNLOAD][PDF] serving={selected_pdf.name}", flush=True)
+        return FileResponse(
+            path=selected_pdf,
+            filename=f"{variant}_{stem}.pdf",
+            media_type="application/pdf",
+        )
+
+    # DOCX branch (serve DOCX only)
     selected_docx: Path | None = None
     if variant == "preview":
         selected_docx = preview_docx if preview_docx.exists() else None
         if selected_docx is None:
+            print(f"[DOWNLOAD][DOCX] preview missing at {preview_docx}", flush=True)
             raise HTTPException(status_code=404, detail="DOCX preview non trovato")
     elif variant == "final":
         selected_docx = final_docx if final_docx.exists() else None
         if selected_docx is None:
+            print(f"[DOWNLOAD][DOCX] final missing at {final_docx}", flush=True)
             raise HTTPException(status_code=404, detail="DOCX finale non trovato")
     else:  # any
         if preview_docx.exists():
@@ -316,13 +353,15 @@ async def download(
         elif final_docx.exists():
             selected_docx = final_docx
         else:
-            docx_files = list(output_dir.glob("*.docx"))
+            docx_files = sorted(output_dir.glob("*.docx"))
             selected_docx = docx_files[0] if docx_files else None
 
     if selected_docx is None or not selected_docx.exists():
-        raise HTTPException(status_code=500, detail="DOCX compilato non trovato")
-    
+        print("[DOWNLOAD][DOCX] no docx candidate found", flush=True)
+        raise HTTPException(status_code=404, detail="DOCX compilato non trovato")
+
     stem = _safe_download_stem(job) if job else job_id
+    print(f"[DOWNLOAD][DOCX] serving={selected_docx.name}", flush=True)
     return FileResponse(
         path=selected_docx,
         filename=f"{variant}_{stem}.docx",
