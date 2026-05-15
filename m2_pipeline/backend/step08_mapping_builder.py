@@ -5,6 +5,29 @@ from typing import Any, Dict, List
 from .step00_config import FIELD_MAPPING_FILENAME
 
 
+def _coerce_bbox(value: Any) -> list[float] | None:
+    if not isinstance(value, (list, tuple)) or len(value) != 4:
+        return None
+    try:
+        x0, y0, x1, y1 = (float(value[0]), float(value[1]), float(value[2]), float(value[3]))
+    except Exception:
+        return None
+    # normalize just in case
+    return [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+
+
+def _bbox_union(a: list[float] | None, b: list[float] | None) -> list[float] | None:
+    if a is None:
+        return b
+    if b is None:
+        return a
+    return [min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3])]
+
+
+def _bbox_contains(outer: list[float], inner: list[float]) -> bool:
+    return outer[0] <= inner[0] and outer[1] <= inner[1] and outer[2] >= inner[2] and outer[3] >= inner[3]
+
+
 def _format_table_context(
     table_index: int,
     row_index: int,
@@ -49,7 +72,41 @@ def _build_items_for_bundle(bundle: Dict[str, Any]) -> List[Dict[str, Any]]:
     fields_items: List[Dict[str, Any]] = []
     other_items: List[Dict[str, Any]] = []
 
+    # Compute outer perimeter bbox for each table (page, table_index) using all available cell bboxes.
+    table_bbox_by_key: dict[tuple[int, int], list[float]] = {}
+    for table in bundle.get("tables") or []:
+        table_index = int(table.get("table_index", 0) or 0)
+        for row in table.get("rows") or []:
+            for cell in row.get("cells") or []:
+                bbox = _coerce_bbox(cell.get("bbox"))
+                if bbox is None:
+                    continue
+                try:
+                    page = int(cell.get("page") or 0)
+                except Exception:
+                    continue
+                key = (page, table_index)
+                table_bbox_by_key[key] = _bbox_union(table_bbox_by_key.get(key), bbox)  # type: ignore[arg-type]
+
+    removed_fields_inside_tables = 0
     for idx, field in enumerate(bundle.get("fields") or []):
+        # Drop fields whose bbox is fully contained within any table perimeter on the same page.
+        try:
+            page = int(field.get("page") or 0)
+        except Exception:
+            page = 0
+        field_bbox = _coerce_bbox(field.get("bbox"))
+        if field_bbox is not None:
+            inside_any_table = False
+            for (t_page, _t_index), t_bbox in table_bbox_by_key.items():
+                if t_page != page:
+                    continue
+                if _bbox_contains(t_bbox, field_bbox):
+                    inside_any_table = True
+                    break
+            if inside_any_table:
+                removed_fields_inside_tables += 1
+                continue
         fields_items.append(
             {
                 "item_id": str(field.get("field_id") or f"field:{idx}"),
@@ -63,6 +120,9 @@ def _build_items_for_bundle(bundle: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "bbox": field.get("bbox"),
             }
         )
+
+    if removed_fields_inside_tables:
+        print(f"[mapping] removed_fields_inside_tables={removed_fields_inside_tables}")
 
     for idx, checkbox in enumerate(bundle.get("checkboxes") or []):
         other_items.append(
@@ -151,6 +211,134 @@ def _rows_for_items(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         rows.append(row)
     return rows
 
+def remove_fields_inside_tables_from_created_json(json_path: str | Path) -> Dict[str, Any]:
+    def norm_bbox(bbox):
+        if not bbox or len(bbox) != 4:
+            return None
+
+        x1, y1, a, b = map(float, bbox)
+
+        if a > x1 and b > y1:
+            x2, y2 = a, b
+        else:
+            x2, y2 = x1 + a, y1 + b
+
+        return {
+            "x1": min(x1, x2),
+            "y1": min(y1, y2),
+            "x2": max(x1, x2),
+            "y2": max(y1, y2),
+        }
+
+    def bbox_center(box):
+        return (
+            (box["x1"] + box["x2"]) / 2,
+            (box["y1"] + box["y2"]) / 2,
+        )
+
+    def point_inside_box(x, y, box, tolerance=2):
+        return (
+            box["x1"] - tolerance <= x <= box["x2"] + tolerance
+            and box["y1"] - tolerance <= y <= box["y2"] + tolerance
+        )
+
+    json_file = Path(json_path).resolve()
+
+    if not json_file.exists():
+        raise FileNotFoundError(f"JSON mapping non trovato: {json_file}")
+
+    payload = json.loads(json_file.read_text(encoding="utf-8"))
+    rows: List[Dict[str, Any]] = list(payload.get("rows") or [])
+
+    tables_by_key: dict[tuple[int, int], list[Dict[str, Any]]] = {}
+
+    for item in rows:
+        if item.get("item_type") != "table_cell":
+            continue
+
+        page = item.get("page")
+        table_index = item.get("table_index")
+        bbox = norm_bbox(item.get("bbox"))
+
+        if page is None or table_index is None or bbox is None:
+            continue
+
+        key = (int(page), int(table_index))
+        tables_by_key.setdefault(key, []).append({
+            "item_id": item.get("item_id"),
+            "row_index": item.get("row_index"),
+            "col_index": item.get("col_index"),
+            "bbox": bbox,
+        })
+
+    table_boxes = []
+
+    for (page, table_index), cells in tables_by_key.items():
+        x1 = min(cell["bbox"]["x1"] for cell in cells)
+        y1 = min(cell["bbox"]["y1"] for cell in cells)
+        x2 = max(cell["bbox"]["x2"] for cell in cells)
+        y2 = max(cell["bbox"]["y2"] for cell in cells)
+
+        table_boxes.append({
+            "page": page,
+            "table_index": table_index,
+            "cells_count": len(cells),
+            "bbox": {
+                "x1": x1,
+                "y1": y1,
+                "x2": x2,
+                "y2": y2,
+            },
+        })
+
+    cleaned_rows: List[Dict[str, Any]] = []
+    removed_count = 0
+
+    for item in rows:
+        if item.get("item_type") != "field":
+            cleaned_rows.append(item)
+            continue
+
+        page = item.get("page")
+        bbox = norm_bbox(item.get("bbox"))
+
+        if page is None or bbox is None:
+            cleaned_rows.append(item)
+            continue
+
+        cx, cy = bbox_center(bbox)
+
+        inside_any_table = False
+
+        for table in table_boxes:
+            if int(page) != int(table["page"]):
+                continue
+
+            if point_inside_box(cx, cy, table["bbox"], tolerance=2):
+                inside_any_table = True
+                break
+
+        if inside_any_table:
+            removed_count += 1
+            continue
+
+        cleaned_rows.append(item)
+
+    payload["rows"] = cleaned_rows
+    payload["item_count"] = len(cleaned_rows)
+
+    json_file.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    print(f"Eliminati {removed_count} field dentro tabelle, per tutte le pagine.")
+
+    return {
+        "json_path": str(json_file),
+        "removed_count": removed_count,
+        "item_count": len(cleaned_rows),
+    }
 
 def build_mapping_file(
     bundle: Dict[str, Any],
@@ -181,6 +369,8 @@ def build_mapping_file(
             ensure_ascii=False,
             indent=2,
         )
+
+    remove_fields_inside_tables_from_created_json(out_path)
 
     return {
         "base_name": bundle["base_name"],
