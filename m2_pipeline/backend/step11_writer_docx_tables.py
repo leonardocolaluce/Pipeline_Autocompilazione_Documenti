@@ -273,7 +273,7 @@ def _append_table_overlay(paragraph: ET.Element, item: TableOverlay, *, page_wid
     rr = ET.SubElement(p, f"{{{W_NS}}}r")
     rpr = ET.SubElement(rr, f"{{{W_NS}}}rPr")
     color = ET.SubElement(rpr, f"{{{W_NS}}}color")
-    color.set(f"{{{W_NS}}}val", "FF0000")
+    color.set(f"{{{W_NS}}}val", "000000")
     sz = ET.SubElement(rpr, f"{{{W_NS}}}sz")
     sz.set(f"{{{W_NS}}}val", str(fs * 2))
     szcs = ET.SubElement(rpr, f"{{{W_NS}}}szCs")
