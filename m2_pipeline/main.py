@@ -15,7 +15,7 @@ from backend.step07_classify_documents_llm import classify_bundles
 from backend.step10_field_mapper_vision import map_bundle_fields_vision
 from backend.step12_final_validator_llm import validate_and_prune
 from backend.step04_import_file import discover_m1_bundles
-from backend.step03_source_documents import resolve_source_docx, resolve_source_document
+from backend.step03_source_documents import resolve_source_docx, resolve_source_document, resolve_source_pdf
 from backend.step11_writer_docx import write_docx_from_mapping, write_docx_preview_from_answers_json
 from backend.step11_writer_pdf import write_pdf_from_answers_json
 from backend.step13_provisional_excel_export import EXCEL_PROVISIONAL_FILENAME, export_mapping_comparison_to_xlsx
@@ -318,6 +318,7 @@ def run_all(
 
     source_doc = resolve_source_document(bundle_name)
     pdf_mode = bool(source_doc is not None and source_doc.suffix.lower() == ".pdf")
+    source_pdf = source_doc if pdf_mode else resolve_source_pdf(bundle_name)
     
     preview_pdf_path = Path(output_dir) / "documento_compilato_preview.pdf"
     preview_path = Path(output_dir) / "documento_compilato_preview.docx"
@@ -353,6 +354,19 @@ def run_all(
                 )
         except Exception:
             pass
+    
+        try:
+            if source_pdf is not None and pre_validator_mapping.exists():
+                write_pdf_from_answers_json(
+                    source_pdf,
+                    pre_validator_mapping,
+                    preview_pdf_path,
+                    color_rgb=(0, 0, 1),
+                    add_white_bg=False,
+                )
+        except Exception:
+            pass
+    
         validate_res = run_validate_final(output_dir, bundle_name, venv_python)
 
 
@@ -363,11 +377,12 @@ def run_all(
             shutil.copy2(mapping_src, post_validator_mapping)
     except Exception:
         pass
+    
     try:
         mapping_src = Path(output_dir) / FIELD_MAPPING_FILENAME
-        if source_doc is not None and source_doc.suffix.lower() == ".pdf" and mapping_src.exists():
+        if source_pdf is not None and mapping_src.exists():
             write_pdf_from_answers_json(
-                source_doc,
+                source_pdf,
                 mapping_src,
                 compiled_pdf_path,
                 color_rgb=(0, 0, 1),
