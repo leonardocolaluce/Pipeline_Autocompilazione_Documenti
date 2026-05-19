@@ -103,7 +103,7 @@ def resolve_source_docx(base_name: str) -> Optional[Path]:
                 best_score = score
                 best_path = path
 
-        return best_path if best_score > 0 else None
+    return best_path if best_score > 0 else None
 
 
 def resolve_source_pdf(base_name: str) -> Optional[Path]:
