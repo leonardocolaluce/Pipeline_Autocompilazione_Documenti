@@ -103,6 +103,33 @@ def resolve_source_docx(base_name: str) -> Optional[Path]:
                 best_score = score
                 best_path = path
 
+        return best_path if best_score > 0 else None
+
+
+def resolve_source_pdf(base_name: str) -> Optional[Path]:
+    forced = os.getenv("M2_FORCE_SOURCE_PDF", "").strip()
+    if forced:
+        p = Path(forced)
+        print(f"[SOURCE] resolve_source_pdf FORCED={p} exists={p.exists()}", flush=True)
+        if p.exists() and p.suffix.lower() == ".pdf":
+            return p
+
+    target = _normalize_name(base_name)
+    best_path: Optional[Path] = None
+    best_score = -1
+
+    for root in _extra_roots() + [SAMPLE_EXTRACTED_ROOT]:
+        if not root.exists():
+            continue
+        for path in root.rglob("*.pdf"):
+            if path.name.startswith("~$"):
+                continue
+            candidate = _normalize_name(path.stem)
+            score = _score_candidate(target, candidate)
+            if score > best_score:
+                best_score = score
+                best_path = path
+
     return best_path if best_score > 0 else None
 
 
