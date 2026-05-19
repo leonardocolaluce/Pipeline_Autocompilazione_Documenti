@@ -674,7 +674,7 @@ def _append_vml_textbox(
     text: str,
     font_size: int,
     font_name: str = "Times New Roman",
-    color_hex: str = "FF0000",
+    color_hex: str = "000000",
     inset_top_pt: float = 0.0,
     relative_to: str = "page",
 ) -> None:
@@ -770,7 +770,7 @@ def _append_vml_textbox_complex(
     h_pt: float,
     text: str,
     font_size: int,
-    color_hex: str = "FF0000",
+    color_hex: str = "000000",
 ) -> None:
     r = ET.SubElement(paragraph, f"{{{W_NS}}}r")
     pict = ET.SubElement(r, f"{{{W_NS}}}pict")
@@ -975,7 +975,7 @@ def compile_overlay_docx(
                 h_pt=h_pt,
                 text=it.text,
                 font_size=_fit_font_size(it.text, w_pt, h_pt, start_fs=10),
-                color_hex="FF0000",
+                color_hex="000000",
             )
         else:
             _append_vml_textbox(
@@ -987,7 +987,7 @@ def compile_overlay_docx(
                 h_pt=h_pt,
                 text=it.text,
                 font_size=fs,
-                color_hex="FF0000",
+                color_hex="000000",
                 inset_top_pt=0.0,
                 relative_to=("margin" if coord_mode == "margin" else "page"),
             )
