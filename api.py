@@ -98,13 +98,25 @@ def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
 
         m1_main.process(doc_path, output_path=None, merge_nearby=False, output_dir=str(m1_out))
 
+        source_pdf = None
+        if src.suffix.lower() in {".doc", ".docx"}:
+            generated_pdf = PROJECT_ROOT / "m1_pipeline" / "postprocessing" / "input.pdf"
+            if generated_pdf.exists():
+                source_pdf = m1_out / f"{src.stem}_source.pdf"
+                shutil.copy2(generated_pdf, source_pdf)
+                print(f"[SOURCE] PDF sorgente Word per M2: {source_pdf}", flush=True)
+            else:
+                print(f"[SOURCE] PDF sorgente Word NON trovato: {generated_pdf}", flush=True)
+        
         jobs[job_id]["progress"] = "M1 completato. Avviamento M2..."
-
+        
         # --- M2 ---
         jobs[job_id]["progress"] = "M2: Mappatura campi..."
         sys.path.insert(0, str(PROJECT_ROOT / "m2_pipeline"))
         os.environ["M2_EXTRA_DOCX_DIRS"] = str(m1_out)
         os.environ["M2_FORCE_SOURCE_DOCX"] = str(docx_source)
+        if source_pdf is not None and source_pdf.exists():
+            os.environ["M2_FORCE_SOURCE_PDF"] = str(source_pdf)
         print(f"[SOURCE] Forzo DOCX sorgente M2: {docx_source}", flush=True)
 
         m2_main = _load_module("m2_main", M2_PATH)
