@@ -56,6 +56,24 @@ _ALIASES = {
     "nata": "nascita",
 }
 
+def _normalize_known_terms(value: str) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"\bc\s*[\.\-]?\s*f\s*\.?\b", " codicefiscale ", text)
+    text = re.sub(r"\bcod\.?\s*fiscale\b", " codicefiscale ", text)
+    text = re.sub(r"\bcodice\s+fiscale\b", " codicefiscale ", text)
+    text = re.sub(r"\bp\s*[\.\-]?\s*iva\b", " partitaiva ", text)
+    text = re.sub(r"\bpartita\s+iva\b", " partitaiva ", text)
+    text = re.sub(r"\be\s*[\.\-]?\s*mail\b", " email ", text)
+    text = re.sub(r"\bmail\s+pec\b", " pec ", text)
+    text = re.sub(r"\bcontratto\s+collettivo\b", " ccnl ", text)
+    text = re.sub(r"\bc\s*\.?\s*f\s*\.?\s*/\s*p\s*\.?\s*iva\b", " codicefiscale partitaiva ", text)
+    text = re.sub(r"\bvia\s*/\s*p\.?zza\b", " indirizzo ", text)
+    text = re.sub(r"\be\s*mail\s*/\s*pec\b", " email pec ", text)
+    text = re.sub(r"\bn\.?\s*rea\b", " rea ", text)
+    text = re.sub(r"\bn\.?\s*di\s*iscrizione\b", " numero iscrizione ", text)
+    text = re.sub(r"\bmatricola\s*n\.?r?\.?\b", " matricola ", text)
+    text = re.sub(r"\bnumero\s+dipendenti\b", " numerodipendenti ", text)
+    return text
 
 def _strip_accents(value: str) -> str:
     value = unicodedata.normalize("NFKD", value or "")
@@ -63,7 +81,7 @@ def _strip_accents(value: str) -> str:
 
 
 def _clean_text(value: str) -> str:
-    text = _strip_accents(str(value or "")).lower()
+    text = _strip_accents(_normalize_known_terms(str(value or ""))).lower()
     text = text.replace("â€™", "'").replace("’", "'")
     text = re.sub(r"\([^)]*\)", " ", text)
     text = re.sub(r"[_.,;:!?/\\|+*=<>[\]{}\"'`~^-]+", " ", text)
@@ -157,6 +175,110 @@ def _label_score(vision_label: str, row_label: str) -> float:
 
     return 0.0
 
+_SOURCE_LABEL_HINTS = {
+    "ragione_sociale": [
+        "ragione sociale", "denominazione", "impresa", "societa",
+        "dell'impresa", "ditta", "operatore economico"
+    ],
+    "codice_fiscale": [
+        "codice fiscale", "cod. fiscale", "cod fiscale", "c.f.", "cf",
+        "c.f. / p.iva"
+    ],
+    "partita_iva": [
+        "partita iva", "p.iva", "p iva", "iva", "c.f. / p.iva"
+    ],
+    "forma_giuridica": [
+        "forma giuridica", "tipo societa", "societa", "cooperativa"
+    ],
+    "codice_attivita": [
+        "cod. attivita", "codice attivita", "attivita"
+    ],
+    "codice_ateco": [
+        "ateco", "codice ateco", "cod. attivita", "codice attivita"
+    ],
+    "settore": [
+        "oggetto sociale", "oggetto dell'attivita", "attivita esercitata",
+        "esercita l'attivita", "attivita di"
+    ],
+    "ccnl": [
+        "ccnl", "contratto collettivo", "contratto collettivo nazionale",
+        "contratto collettivo applicato", "contratto applicato"
+    ],
+    "numero_dipendenti": [
+        "numero dipendenti", "n. dipendenti", "dimensione aziendale",
+        "fascia dipendenti", "dipendenti"
+    ],
+    "sede_legale_operativa": [
+        "sede legale", "sede", "con sede", "sede a", "sede in"
+    ],
+    "sede_legale_operativa.comune": [
+        "comune", "sede legale in", "con sede legale in", "sede a"
+    ],
+    "sede_legale_operativa.provincia": [
+        "provincia", "prov.", "prov", "presso la provincia di"
+    ],
+    "sede_legale_operativa.indirizzo": [
+        "indirizzo", "via", "via/piazza", "via/p.zza", "piazza"
+    ],
+    "sede_legale_operativa.cap": [
+        "cap", "c.a.p."
+    ],
+    "contatti.telefono": [
+        "telefono", "tel", "tel.", "recapito telefonico"
+    ],
+    "contatti.email": [
+        "email", "e-mail", "indirizzo email", "posta elettronica"
+    ],
+    "mail_pec": [
+        "pec", "indirizzo pec", "mail pec", "e-mail/pec", "email/pec"
+    ],
+    "registro_imprese.numero": [
+        "registro imprese", "registro delle imprese", "n. registro",
+        "numero iscrizione", "n. di iscrizione"
+    ],
+    "registro_imprese.camera_commercio": [
+        "cciaa", "camera di commercio", "registro imprese presso la cciaa"
+    ],
+    "registro_imprese.data_inizio": [
+        "data iscrizione", "dal", "iscritta dal"
+    ],
+    "rea.numero": [
+        "rea", "numero rea", "n. rea"
+    ],
+    "inps": [
+        "inps", "posizione inps", "matricola inps"
+    ],
+    "inail": [
+        "inail", "posizione inail", "codice ditta", "pat", "numero pat"
+    ],
+    "cassa_edile": [
+        "cassa edile", "matricola cassa edile", "codice cassa"
+    ],
+    "conto_corrente.iban": [
+        "iban", "conto corrente", "cc dedicato"
+    ],
+    "enti_competenti": [
+        "tribunale competente", "tribunale", "agenzia delle entrate",
+        "centro per l'impiego", "ufficio competente"
+    ],
+}
+
+
+def _source_hint_score(match: Dict[str, Any], row: Dict[str, Any]) -> float:
+    source_path = str(match.get("source_path") or "").lower()
+    row_label = str(row.get("label") or "")
+
+    if not source_path:
+        return 0.0
+
+    best = 0.0
+    for source_key, hints in _SOURCE_LABEL_HINTS.items():
+        if source_key not in source_path:
+            continue
+        for hint in hints:
+            best = max(best, _label_score(hint, row_label))
+
+    return best
 
 def _candidate_score(
     *,
@@ -175,7 +297,7 @@ def _candidate_score(
 
     label = str(match.get("label") or "")
     row_label = str(row.get("label") or "")
-    score = _label_score(label, row_label)
+    score = max(_label_score(label, row_label), _source_hint_score(match, row))
     if score <= 0:
         return 0.0
 
@@ -191,7 +313,7 @@ def _candidate_score(
             distance = row_index - last_index
             score += max(0.0, 8.0 - min(distance, 8))
         else:
-            score -= 35.0
+            score -= 15.0
 
     return score
 
@@ -252,7 +374,7 @@ def merge_vision_matches_into_mapping(
             continue
 
         index, score = _best_row_for_match(match, rows, used_indexes, last_index_for_page)
-        if index is None or score < 60.0:
+        if index is None or score < 40.0:
             continue
 
         row = rows[index]
