@@ -115,12 +115,13 @@ def _build_prompt() -> str:
         "- NON considerare tabella: elenchi di opzioni con quadratini/checkbox/radio, righe singole da compilare con puntini \".....\" o linee \"_____\", o liste puntate.\n"
         "- Considera tabella SOLO se vedi una griglia evidente (linee che delimitano celle) oppure un layout ripetuto etichetta|valore su più righe.\n"
         "- Per table_type=\"grid\": richiedi una vera tabella con almeno 2 colonne e 2 righe (o comunque una griglia evidente con intestazioni di colonna). Se vedi solo 1 colonna o solo righe di testo separato, NON includere.\n"
-        "- Per table_type=\"kv\": includi solo se ci sono almeno 3 righe etichetta→valore/campo, con area valore allineata (spesso vuota) a destra. Se sono opzioni con checkbox, NON includere.\n"
+        "- Per table_type=\"kv\": includi anche tabelle con 1 o 2 righe se contengono dati previdenziali/assicurativi come INPS, INAIL, CASSA EDILE, oppure contatti/sede/PEC/email.\n"
+        "- Per table_type=\"kv\": negli altri casi includi se ci sono almeno 3 righe etichetta→valore/campo, con area valore allineata (spesso vuota) a destra. Se sono opzioni con checkbox, NON includere.\n"
         "- rows/cols devono essere numeri interi >0 quando possibile.\n"
         "- table_type: \"kv\" per tabelle etichetta|valore, altrimenti \"grid\".\n"
         "- headers: lista di stringhe SOLO se vedi intestazioni di colonna reali (non valori nelle celle).\n"
         "- ESCLUDI (non riportare) tabelle informative/non compilabili: se TUTTE o QUASI TUTTE le celle contengono già testo/valori (es. elenchi già compilati, tabelle di soglie, tabelle descrittive), allora NON è una tabella da compilare.\n"
-        "- Se una griglia non ha intestazioni di colonna, NON includerla.\n"
+        "- Se una griglia non ha intestazioni visibili ma contiene celle vuote da compilare, includila comunque usando headers generici: [\"col_0\", \"col_1\", ...].\n"
         "- ECCEZIONE: se è chiaramente una tabella da compilare con etichette fisse a sinistra e campi vuoti a destra, descrivila come table_type=\"kv\" (cols=2).\n\n"
         "SCHEMA OUTPUT:\n"
         "{\n"
@@ -283,12 +284,33 @@ def _build_fill_prompt(company_data: dict[str, Any], detected_tables: list[dict[
         "- Compilare i campi vuoti usando ESCLUSIVAMENTE i dati presenti nell'anagrafica.\n\n"
         "REGOLE IMPORTANTI:\n"
         "- Rispondi con SOLO JSON valido (niente testo extra).\n"
-        "- NON inventare valori. Se non trovi un dato con alta confidenza, lascia value vuoto.\n"
+        "- Compila ogni cella vuota quando il dato è ragionevolmente compatibile con intestazione, riga o posizione. Usa value vuoto solo se nessun dato del JSON è semanticamente compatibile.\n"
         "- NON aggiungere tabelle non presenti in 'TABELLE_RILEVATE'. Usa esattamente gli stessi table_id.\n"
-        "- NON cambiare table_type, rows/cols, o headers delle tabelle rilevate. Se non ci sono headers, lascia headers=[] e non crearne.\n"
+        "- Se una tabella grid non ha headers, usa headers generici coerenti con il numero di colonne: col_0, col_1, col_2.\n"
         "- Se una tabella è già piena (celle già compilate), riportala comunque ma NON sovrascrivere: copia i valori già presenti come 'value'.\n"
         "- Se una tabella non è compilabile (è solo informativa), NON deve comparire.\n"
         "- Per ogni value compilato, aggiungi 'source' con un percorso tipo 'azienda.dati_fiscali.partita_iva' oppure 'soggetti_in_carica[0].codice_fiscale'.\n"
+        "\n"
+        "REGOLE SPECIFICHE POSIZIONI PREVIDENZIALI/ASSICURATIVE:\n"
+        "- Se una tabella contiene righe INPS, INAIL, CASSA EDILE, compila tutte le celle disponibili usando questi mapping:\n"
+        "  - Riga INPS:\n"
+        "    - posizione/matricola/codice = azienda.inps.posizione oppure azienda.inps.matricola\n"
+        "    - sede/comune = azienda.inps.comune\n"
+        "    - indirizzo = azienda.inps.indirizzo\n"
+        "    - provincia = azienda.inps.provincia\n"
+        "  - Riga INAIL:\n"
+        "    - codice ditta = azienda.inail.codice_ditta\n"
+        "    - PAT/numero PAT = azienda.inail.numero_pat\n"
+        "    - sede/comune = azienda.inail.comune\n"
+        "    - provincia = azienda.inail.provincia\n"
+        "  - Riga CASSA EDILE:\n"
+        "    - codice ditta = azienda.cassa_edile.codice_ditta\n"
+        "    - codice cassa = azienda.cassa_edile.codice_cassa\n"
+        "    - sede/comune = azienda.cassa_edile.comune\n"
+        "    - indirizzo = azienda.cassa_edile.indirizzo\n"
+        "    - CAP = azienda.cassa_edile.cap\n"
+        "- Se ci sono due celle vuote sulla stessa riga, usa la prima per posizione/codice/matricola e la seconda per sede/comune/indirizzo, quando coerente con le intestazioni visibili.\n"
+        "\n"
         "- PER TABELLE GRID: devi restituire anche coordinate ESATTE:\n"
         "  - row_index (0-based) = indice riga nella tabella (ordine dall'alto verso il basso)\n"
         "  - col_index (0-based) = indice colonna in base a grid.headers nell'ordine fornito\n"
@@ -443,21 +465,34 @@ def _coerce_filled_tables_only(
         for r in rows:
             if not isinstance(r, dict):
                 continue
+
             label = r.get("label")
             value = r.get("value")
             source = r.get("source")
+
             if not isinstance(label, str):
                 continue
+
             if not isinstance(value, str):
                 value = "" if value is None else str(value)
-            if not isinstance(source, str):
+
+            if isinstance(source, list):
+                source = ",".join(str(x) for x in source if x)
+            elif not isinstance(source, str):
                 source = ""
-            kv_rows.append({"label": label.strip(), "value": value.strip(), "source": source.strip()})
+
+            kv_rows.append(
+                {
+                    "label": label.strip(),
+                    "value": value.strip(),
+                    "source": source.strip(),
+                }
+            )
 
         grid = t.get("grid")
         grid_out: dict[str, Any] | None = None
         if isinstance(grid, dict) and str(table_type).strip().lower() == "grid":
-            # Never let the model invent grid headers: use detected headers only.
+        
             g_headers = headers
 
             # Prefer new format: grid.cells = [{row_index,col_index,value,source}, ...]
@@ -472,13 +507,15 @@ def _coerce_filled_tables_only(
                         col_index = int(cell.get("col_index"))
                     except Exception:
                         continue
-                    if row_index < 0 or col_index < 0 or col_index >= len(g_headers):
+                    if row_index < 0 or col_index < 0:
                         continue
+                    while len(g_headers) <= col_index:
+                        g_headers.append(f"col_{len(g_headers)}")
                     value = cell.get("value")
                     source = cell.get("source")
-                    if not isinstance(value, str):
-                        value = "" if value is None else str(value)
-                    if not isinstance(source, str):
+                    if isinstance(source, list):
+                        source = ",".join(str(x) for x in source if x)
+                    elif not isinstance(source, str):
                         source = ""
                     value = value.strip()
                     source = source.strip()
@@ -851,8 +888,10 @@ def run_vision_tables(
                             cidx = int(cell.get("col_index"))
                         except Exception:
                             continue
-                        if ridx < 0 or cidx < 0 or cidx >= len(headers):
+                        if ridx < 0 or cidx < 0:
                             continue
+                        while len(headers) <= cidx:
+                            headers.append(f"col_{len(headers)}")
                         value = cell.get("value")
                         value = "" if value is None else str(value).strip()
                         if not value:
@@ -954,7 +993,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Vision: detect tables (one request per page) via Mistral.")
     parser.add_argument(
         "--image-dir",
-        default=r"",
+        default=r"C:\Users\39334\Desktop\Autocompilazione file\Millestone_3\pipeline_4\output\m1_output",
         help="Cartella base che contiene una sottocartella con le immagini (nome variabile) o le immagini direttamente.",
     )
     parser.add_argument("--image-index", type=int, default=0, help="Indice (0-based) della prima immagine (default: 0).")
@@ -971,7 +1010,7 @@ def main() -> int:
     )
     parser.add_argument(
         "--anagrafica-json",
-        default=r"",
+        default=r"C:\Users\39334\Desktop\Autocompilazione file\Millestone_2\anagrafica_NIKANTE.json",
         help="Path JSON anagrafica azienda (input per compilazione).",
     )
     parser.add_argument(
