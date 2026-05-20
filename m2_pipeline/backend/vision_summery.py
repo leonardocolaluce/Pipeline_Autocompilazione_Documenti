@@ -246,6 +246,9 @@ def _coerce_match_output(matches_obj: dict[str, Any], data_json: Any) -> dict[st
             text_value = str(value).strip()
             keep = text_value in allowed
             if not keep and isinstance(source_path, str):
+                source_value = _get_by_path(data_json, source_path)
+                keep = source_value is not None
+            if not keep and isinstance(source_path, str):
                 # Allow fullname combo if source_path points to an object with {nome,cognome}.
                 combo = _allow_fullname_combination(data_json, source_path)
                 if combo and text_value == combo:
@@ -331,7 +334,7 @@ def run_vision_mapping(
                                     "- 1 JSON dati azienda/anagrafica.\n\n"
                                     "Obiettivo: estrarre i campi visibili e tentare un match con i dati, senza inventare.\n\n"
                                     "REGOLE IMPORTANTI:\n"
-                                    "- Usa SOLO valori letteralmente presenti nel JSON dati.\n"
+                                    "- Usa solo informazioni presenti nel JSON dati, ma puoi comporre valori da più campi quando il modulo richiede un dato completo, es. indirizzo + comune + provincia, oppure cognome + nome.\n"
                                     "- Non inventare path: i path devono essere reali e riferiti al JSON esattamente come fornito.\n"
                                     "- Distingui campi PERSONA (es. residenza persona) da campi AZIENDA (sede legale, P.IVA, ragione sociale). Se il JSON non ha residenza persona, metti N/D.\n"
                                     "REGOLE PERSONA (SELEZIONE SOGGETTO):\n"
