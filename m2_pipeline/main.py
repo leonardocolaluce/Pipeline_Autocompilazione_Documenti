@@ -22,6 +22,7 @@ from backend.step13_provisional_excel_export import EXCEL_PROVISIONAL_FILENAME, 
 from backend.step06_xml_to_json_bridge import convert_xml_with_existing_script
 from backend.step10_merge_tables_into_mapping import merge_tables_filled_into_mapping
 from backend.step14_regex_validator import clean_mapping_with_regex_rules
+from backend.step15_docx_render_qc_mistral import qc_docx_render_first_page
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -333,6 +334,8 @@ def run_all(
     
     preview_pdf_path = Path(output_dir) / "documento_compilato_preview.pdf"
     preview_path = Path(output_dir) / "documento_compilato_preview.docx"
+    provisional_docx_path = Path(output_dir) / "documento_compilato_provvisorio.docx"
+    qc_json_path = Path(output_dir) / "document_quality.json"
     compiled_pdf_path = Path(output_dir) / "documento_compilato_finale.pdf"
     
     if pdf_mode:
@@ -354,6 +357,46 @@ def run_all(
             validate_res = {"removed_count": 0}
     else:
         write_res = run_write_docx(output_dir, bundle_name, venv_python)
+
+        # --- QC render (Mistral) on provisional DOCX before generating preview ---
+        try:
+            source_docx = resolve_source_docx(bundle_name)
+            if source_docx is not None and pre_validator_mapping.exists():
+                # First pass with default offset (WORD_Y_OFFSET unset/0).
+                os.environ.pop("WORD_Y_OFFSET", None)
+                write_docx_preview_from_answers_json(
+                    source_docx,
+                    pre_validator_mapping,
+                    provisional_docx_path,
+                    color_hex="000000",
+                )
+                qc_res = qc_docx_render_first_page(
+                    compiled_docx_path=provisional_docx_path,
+                    out_json_path=qc_json_path,
+                    work_dir=Path(output_dir),
+                )
+                if not bool(qc_res.get("good", True)):
+                    # Re-write with vertical shift up.
+                    os.environ["WORD_Y_OFFSET"] = "-10"
+                    write_docx_preview_from_answers_json(
+                        source_docx,
+                        pre_validator_mapping,
+                        provisional_docx_path,
+                        color_hex="000000",
+                    )
+                    # Best-effort: overwrite QC report with post-fix evaluation.
+                    try:
+                        qc_docx_render_first_page(
+                            compiled_docx_path=provisional_docx_path,
+                            out_json_path=qc_json_path,
+                            work_dir=Path(output_dir),
+                        )
+                    except Exception:
+                        pass
+        except Exception:
+            # QC is best-effort; do not block the pipeline if it fails.
+            pass
+
         try:
             source_docx = resolve_source_docx(bundle_name)
             if source_docx is not None and pre_validator_mapping.exists():
