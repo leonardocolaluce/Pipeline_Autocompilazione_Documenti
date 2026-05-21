@@ -20,6 +20,11 @@ app = FastAPI(title="Pipeline Autocompilazione")
 
 # === Job State Management ===
 jobs: Dict[str, Dict[str, Any]] = {}
+def cancel_previous_jobs():
+    for jid, job in jobs.items():
+        if job.get("status") in {"queued", "running"}:
+            job["status"] = "cancelled"
+            job["progress"] = "Job annullato perché è stato avviato un nuovo upload"
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 M1_PATH = PROJECT_ROOT / "m1_pipeline" / "main.py"
@@ -181,6 +186,7 @@ async def upload(file: UploadFile = File(...), data_json: UploadFile = File(...)
         {"job_id": "uuid", "status": "queued"}
     """
     job_id = str(uuid.uuid4())
+    cancel_previous_jobs()
 
     old_tmp = PROJECT_ROOT / "tmp"
     print(f"[CLEANUP] Cancello tmp precedente: {old_tmp} exists={old_tmp.exists()}", flush=True)
