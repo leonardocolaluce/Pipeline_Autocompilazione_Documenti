@@ -403,9 +403,9 @@ def run_all(
                         f"[QC] good=True confidence={qc_res.get('confidence')} reason={qc_res.get('reason')}",
                         flush=True,
                     )
-        except Exception:
+        except Exception as exc:
             # QC is best-effort; do not block the pipeline if it fails.
-            pass
+            print(f"[QC] skipped err={type(exc).__name__}: {exc}", flush=True)
 
         try:
             source_docx = resolve_source_docx(bundle_name)
