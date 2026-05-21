@@ -252,7 +252,7 @@ try:
                 AddToRecentFiles=False,
                 Revert=False,
                 NoEncodingDialog=True,
-                OpenAndRepair=True,
+                OpenAndRepair=False,
             ),
             dict(
                 FileName=path,
