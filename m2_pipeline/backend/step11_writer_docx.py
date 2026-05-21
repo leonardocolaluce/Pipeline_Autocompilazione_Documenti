@@ -163,7 +163,7 @@ def compila_word(word_path: str, json_path: str, output_path: str) -> dict:
         ConfirmConversions=False,
         ReadOnly=False,
         AddToRecentFiles=False,
-        OpenAndRepair=True,
+        OpenAndRepair=False,
         NoEncodingDialog=True
     )
 
