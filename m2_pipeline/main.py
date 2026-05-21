@@ -376,6 +376,11 @@ def run_all(
                     work_dir=Path(output_dir),
                 )
                 if not bool(qc_res.get("good", True)):
+                    print(
+                        f"[QC] good=False confidence={qc_res.get('confidence')} "
+                        f"reason={qc_res.get('reason')} -> applying WORD_Y_OFFSET=-10",
+                        flush=True,
+                    )
                     # Re-write with vertical shift up.
                     os.environ["WORD_Y_OFFSET"] = "-10"
                     write_docx_preview_from_answers_json(
@@ -393,6 +398,11 @@ def run_all(
                         )
                     except Exception:
                         pass
+                else:
+                    print(
+                        f"[QC] good=True confidence={qc_res.get('confidence')} reason={qc_res.get('reason')}",
+                        flush=True,
+                    )
         except Exception:
             # QC is best-effort; do not block the pipeline if it fails.
             pass
