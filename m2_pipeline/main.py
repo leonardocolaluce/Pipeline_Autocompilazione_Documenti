@@ -409,14 +409,9 @@ def run_all(
             print(f"[QC] skipped err={type(exc).__name__}: {exc}", flush=True)
 
         try:
-            source_docx = resolve_source_docx(bundle_name)
-            if source_docx is not None and pre_validator_mapping.exists():
-                write_docx_preview_from_answers_json(
-                    source_docx,
-                    pre_validator_mapping,
-                    preview_path,
-                    color_hex="0000FF",
-                )
+            if provisional_docx_path.exists():
+                preview_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(provisional_docx_path, preview_path)
         except Exception:
             pass
     
