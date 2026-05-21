@@ -12,7 +12,18 @@ WD_REL_V_PAGE = 1   # wdRelativeVerticalPositionPage    (dal bordo fisico del fo
 MIN_WIDTH  = 60
 MIN_HEIGHT = 14
 FONT_SIZE  = 10
-Y_OFFSET = -10
+# Vertical shift (in points) applied to every textbox.
+# Default: 0. Set WORD_Y_OFFSET=-10 (or any int/float) to move text up.
+def _y_offset() -> float:
+    raw = os.getenv("WORD_Y_OFFSET", "").strip()
+    if not raw:
+        return 0.0
+    try:
+        return float(raw)
+    except Exception:
+        return 0.0
+
+Y_OFFSET = _y_offset()
 # ─────────────────────────────────────────────────────────────────────────────
 
 
