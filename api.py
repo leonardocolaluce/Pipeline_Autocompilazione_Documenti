@@ -279,6 +279,8 @@ async def download(
     output_dir = PROJECT_ROOT / "output" / job_id / "m2_output"
     if not output_dir.exists():
         raise HTTPException(status_code=404, detail="Output job non trovato (job non finito)")
+    job = jobs.get(job_id)
+    input_is_pdf = bool(job and str(job.get("doc_name") or "").lower().endswith(".pdf"))
 
     job = jobs.get(job_id)  # può essere None in multi-worker / multi-instance
     try:
@@ -456,6 +458,8 @@ async def preview_pages(job_id: str):
     output_dir = PROJECT_ROOT / "output" / job_id / "m2_output"
     if not output_dir.exists():
         raise HTTPException(status_code=404, detail="Output job non trovato (job non finito)")
+    job = jobs.get(job_id)
+    input_is_pdf = bool(job and str(job.get("doc_name") or "").lower().endswith(".pdf"))
 
     # --- NEW: preview da PDF se presente (caso input PDF) ---
     preview_pdf = output_dir / "documento_compilato_preview.pdf"
