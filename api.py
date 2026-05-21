@@ -482,6 +482,11 @@ async def preview_pages(job_id: str):
     preview_docx = output_dir / "documento_compilato_preview.docx"
     final_docx   = output_dir / "documento_compilato_finale.docx"
     docx_path = preview_docx if preview_docx.exists() else final_docx
+    try:
+        st = docx_path.stat()
+        print(f"[PREVIEW] using_docx={docx_path} size={st.st_size} mtime={st.st_mtime}", flush=True)
+    except Exception as e:
+        print(f"[PREVIEW] using_docx={docx_path} stat_error={e}", flush=True)
     if not docx_path.exists():
         raise HTTPException(status_code=404, detail="DOCX compilato non trovato")
 
