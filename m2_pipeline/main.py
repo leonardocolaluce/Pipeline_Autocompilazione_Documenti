@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 import sys
 import time
+import os
 
 from backend.step00_config import (
     CLASSIFICATION_FILENAME,
