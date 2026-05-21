@@ -115,6 +115,14 @@ def aggiungi_textbox(doc, page: int, x1: float, y1: float,
     shape.RelativeHorizontalPosition = WD_REL_H_PAGE
     shape.RelativeVerticalPosition   = WD_REL_V_PAGE
     shape.Left = x1
+    try:
+        print(
+            f"[WRITER] WORD_Y_OFFSET_env={os.getenv('WORD_Y_OFFSET')} "
+            f"Y_OFFSET_const={Y_OFFSET} y1={y1} top={y1 + Y_OFFSET}",
+            flush=True,
+        )
+    except Exception:
+        pass
     shape.Top  = y1 + Y_OFFSET
 
     # Nessun bordo, nessuno sfondo
