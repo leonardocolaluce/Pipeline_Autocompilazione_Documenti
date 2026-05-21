@@ -150,15 +150,22 @@ def compila_word(word_path: str, json_path: str, output_path: str) -> dict:
 
     if not campi:
         print("Nessun campo con risposta trovato nel JSON. Uscita.")
-        doc.SaveAs(os.path.abspath(output_path))
-        return {"output_path": os.path.abspath(output_path), "replaced_count": 0}
+        return {"output_path": os.path.abspath(word_path), "replaced_count": 0}
     print(f"Trovati {len(campi)} campi da compilare.")
 
     print(f"\nApro Word: {word_path}")
     word = win32.gencache.EnsureDispatch("Word.Application")
     word.Visible = False
     word.DisplayAlerts = 0
-    doc = word.Documents.Open(FileName=os.path.abspath(word_path))
+    word.AutomationSecurity = 3
+    doc = word.Documents.Open(
+        FileName=os.path.abspath(word_path),
+        ConfirmConversions=False,
+        ReadOnly=False,
+        AddToRecentFiles=False,
+        OpenAndRepair=True,
+        NoEncodingDialog=True
+    )
 
     try:
         # STEP 1: rileva e stampa geometria documento
