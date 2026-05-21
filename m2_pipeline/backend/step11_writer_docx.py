@@ -12,6 +12,7 @@ WD_REL_V_PAGE = 1   # wdRelativeVerticalPositionPage    (dal bordo fisico del fo
 MIN_WIDTH  = 60
 MIN_HEIGHT = 14
 FONT_SIZE  = 10
+Y_OFFSET = -10
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -103,7 +104,7 @@ def aggiungi_textbox(doc, page: int, x1: float, y1: float,
     shape.RelativeHorizontalPosition = WD_REL_H_PAGE
     shape.RelativeVerticalPosition   = WD_REL_V_PAGE
     shape.Left = x1
-    shape.Top  = y1
+    shape.Top  = y1 + Y_OFFSET
 
     # Nessun bordo, nessuno sfondo
     shape.Line.Visible = False
