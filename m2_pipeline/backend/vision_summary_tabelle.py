@@ -15,7 +15,7 @@ MISTRAL_API_URL = os.getenv("MISTRAL_API_URL", "https://api.mistral.ai/v1/chat/c
 DEFAULT_MODEL = os.getenv("MISTRAL_MODEL", "mistral-medium-2508").strip()
 
 # key: INCOLLA_QUI_LA_TUA_MISTRAL_API_KEY
-MISTRAL_API_KEY_FALLBACK = "bVM5JemGXjoR8QgMk2Q5IRoJN5BVGDtr"
+MISTRAL_API_KEY_FALLBACK = "6VNEHKbfEDGTobcVJyKRXjJzK9N73kNI"
 
 
 def _extract_text_from_response(payload: dict[str, Any]) -> str:
