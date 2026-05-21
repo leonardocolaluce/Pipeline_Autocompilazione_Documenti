@@ -371,6 +371,15 @@ def run_all(
                     provisional_docx_path,
                     color_hex="000000",
                 )
+                try:
+                    st = provisional_docx_path.stat()
+                    print(
+                        f"[QC] provisional_written path={provisional_docx_path} "
+                        f"size={st.st_size} mtime={st.st_mtime} WORD_Y_OFFSET_env={os.getenv('WORD_Y_OFFSET')}",
+                        flush=True,
+                    )
+                except Exception as e:
+                    print(f"[QC] provisional_written stat_error={e}", flush=True)
                 qc_res = qc_docx_render_first_page(
                     compiled_docx_path=provisional_docx_path,
                     out_json_path=qc_json_path,
@@ -390,6 +399,15 @@ def run_all(
                         provisional_docx_path,
                         color_hex="000000",
                     )
+                    try:
+                        st = provisional_docx_path.stat()
+                        print(
+                            f"[QC] provisional_rewritten path={provisional_docx_path} "
+                            f"size={st.st_size} mtime={st.st_mtime} WORD_Y_OFFSET_env={os.getenv('WORD_Y_OFFSET')}",
+                            flush=True,
+                        )
+                    except Exception as e:
+                        print(f"[QC] provisional_rewritten stat_error={e}", flush=True)
                     # Best-effort: overwrite QC report with post-fix evaluation.
                     try:
                         qc_docx_render_first_page(
