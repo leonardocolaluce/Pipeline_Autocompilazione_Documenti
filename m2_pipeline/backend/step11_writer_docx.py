@@ -22,8 +22,6 @@ def _y_offset() -> float:
         return float(raw)
     except Exception:
         return 0.0
-
-Y_OFFSET = _y_offset()
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -115,15 +113,18 @@ def aggiungi_textbox(doc, page: int, x1: float, y1: float,
     shape.RelativeHorizontalPosition = WD_REL_H_PAGE
     shape.RelativeVerticalPosition   = WD_REL_V_PAGE
     shape.Left = x1
+
+    offset = _y_offset()
     try:
         print(
             f"[WRITER] WORD_Y_OFFSET_env={os.getenv('WORD_Y_OFFSET')} "
-            f"Y_OFFSET_const={Y_OFFSET} y1={y1} top={y1 + Y_OFFSET}",
+            f"Y_OFFSET_used={offset} y1={y1} top={y1 + offset}",
             flush=True,
         )
     except Exception:
         pass
-    shape.Top  = y1 + Y_OFFSET
+
+    shape.Top = y1 + offset
 
     # Nessun bordo, nessuno sfondo
     shape.Line.Visible = False
