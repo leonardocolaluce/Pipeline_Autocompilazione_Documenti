@@ -399,6 +399,14 @@ async def download_mapping(job_id: str, variant: str = Query(default="provvisori
     """
     output_dir = PROJECT_ROOT / "output" / job_id / "m2_output"
     if not output_dir.exists():
+        job = jobs.get(job_id)  # può essere None in multi-worker / multi-instance
+        input_is_pdf = False
+        if job is not None:
+            doc_name = str(job.get("doc_name") or "")
+            input_is_pdf = doc_name.lower().endswith(".pdf")
+        else:
+            # fallback stateless: se troviamo un DOCX assumiamo input Word
+            input_is_pdf = not any(p.suffix.lower() == ".docx" for p in output_dir.glob("*.docx"))
         raise HTTPException(status_code=404, detail="Output job non trovato (job non finito)")
 
     mapping_path = output_dir / ("campo_valore_provvisorio.json" if variant == "provvisorio" else "campo_valore_finale.json")
@@ -454,7 +462,7 @@ async def preview_pages(job_id: str):
     final_pdf   = output_dir / "documento_compilato_finale.pdf"
     pdf_path = preview_pdf if preview_pdf.exists() else final_pdf
 
-    if pdf_path.exists():
+    if input_is_pdf and pdf_path.exists():
         print(f"[PREVIEW] job_id={job_id} output_dir={output_dir}", flush=True)
         print(f"[PREVIEW] pdf_path={pdf_path} size={pdf_path.stat().st_size}", flush=True)
 
