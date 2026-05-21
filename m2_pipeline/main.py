@@ -21,7 +21,7 @@ from backend.step11_writer_pdf import write_pdf_from_answers_json
 from backend.step13_provisional_excel_export import EXCEL_PROVISIONAL_FILENAME, export_mapping_comparison_to_xlsx
 from backend.step06_xml_to_json_bridge import convert_xml_with_existing_script
 from backend.step10_merge_tables_into_mapping import merge_tables_filled_into_mapping
-
+from backend.step14_regex_validator import clean_mapping_with_regex_rules
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -305,6 +305,7 @@ def run_all(
         pass
 
     # Merge LLM vision table cells into the pre-validator mapping snapshot (strict coordinates).
+    # Merge LLM vision table cells into the pre-validator mapping snapshot (strict coordinates).
     try:
         tables_filled = Path(output_dir) / "tables_filled_output.json"
         if tables_filled.exists() and pre_validator_mapping.exists():
@@ -312,6 +313,16 @@ def run_all(
                 tables_filled_json_path=tables_filled,
                 mapping_json_path=pre_validator_mapping,
                 only_if_empty=True,
+            )
+    except Exception:
+        pass
+
+    # Regex validator: pulisce il mapping provvisorio COMPLETO (campi + tabelle) prima del preview.
+    try:
+        if pre_validator_mapping.exists():
+            clean_mapping_with_regex_rules(
+                mapping_json_path=pre_validator_mapping,
+                data_json_path=xml_res["json_output"],
             )
     except Exception:
         pass
