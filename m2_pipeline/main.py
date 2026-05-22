@@ -385,9 +385,12 @@ def run_all(
                     out_json_path=qc_json_path,
                     work_dir=Path(output_dir),
                 )
-                if not bool(qc_res.get("good", True)):
+                qc_good = bool(qc_res.get("good", True))
+                qc_conf = float(qc_res.get("confidence", 0.0) or 0.0)
+                
+                if not qc_good and qc_conf >= 0.90:
                     print(
-                        f"[QC] good=False confidence={qc_res.get('confidence')} "
+                        f"[QC_DECISION] RISCRIVO documento: good={qc_good} confidence={qc_conf} "
                         f"reason={qc_res.get('reason')} -> applying WORD_Y_OFFSET=-10",
                         flush=True,
                     )
@@ -419,7 +422,8 @@ def run_all(
                         pass
                 else:
                     print(
-                        f"[QC] good=True confidence={qc_res.get('confidence')} reason={qc_res.get('reason')}",
+                        f"[QC_DECISION] LASCIO documento originale: good={qc_good} confidence={qc_conf} "
+                        f"reason={qc_res.get('reason')}",
                         flush=True,
                     )
         except Exception as exc:
