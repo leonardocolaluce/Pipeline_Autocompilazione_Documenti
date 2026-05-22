@@ -160,6 +160,20 @@ def _coerce_qc_json(text: str) -> dict[str, Any]:
         if isinstance(obj, dict):
             return obj
     except Exception:
+        import re
+
+        good_match = re.search(r'"?good"?\s*[:=]\s*(true|false)', text, re.I)
+        conf_match = re.search(r'"?confidence"?\s*[:=]\s*([01](?:\.\d+)?)', text, re.I)
+
+        if good_match:
+            good = good_match.group(1).lower() == "true"
+            confidence = float(conf_match.group(1)) if conf_match else 0.0
+            return {
+                "good": good,
+                "confidence": max(0.0, min(1.0, confidence)),
+                "reason": "recovered_from_invalid_json",
+            }
+
         return {"good": True, "confidence": 0.0, "reason": "invalid_json"}
 
     return {"good": True, "confidence": 0.0, "reason": "unknown_parse_state"}
