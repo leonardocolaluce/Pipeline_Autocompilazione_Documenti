@@ -71,6 +71,7 @@ QC_SYSTEM_PROMPT = (
     "- riga della data (es. 'il ...')\n"
     "Se noti scambio di riga/campo in uno di questi anchor -> good=false.\n"
     "Se NON noti scambio di riga/campo -> good=true.\n"
+    "Se non vedi campi compilati in quella foto allora metti true.\n
     "\n"
     "Output: restituisci ESCLUSIVAMENTE un JSON valido, senza testo extra, con questo schema:\n"
     "{\n"
