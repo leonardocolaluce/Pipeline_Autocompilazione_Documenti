@@ -14,20 +14,16 @@ import fitz  # PyMuPDF
 
 from .step00_config import MISTRAL_API_KEY, MISTRAL_MODEL
 
-def _crop_vertical_quarter(
+def _crop_middle_area(
     *,
     input_png_path: Path,
     output_png_path: Path,
-    quarter_index: int,
 ) -> None:
-    if quarter_index not in {1, 2, 3, 4}:
-        raise ValueError("quarter_index deve essere tra 1 e 4")
-
     img = Image.open(input_png_path)
     width, height = img.size
 
-    y1 = int(height * (quarter_index - 1) / 4)
-    y2 = int(height * quarter_index / 4)
+    y1 = int(height * 0.15)
+    y2 = int(height * 0.75)
 
     cropped = img.crop((0, y1, width, y2))
     output_png_path.parent.mkdir(parents=True, exist_ok=True)
@@ -45,42 +41,11 @@ def _encode_image_data_uri(image_path: Path) -> str:
 
 
 QC_SYSTEM_PROMPT = (
-    "Sei un controllore visivo molto conservativo per una pipeline che compila moduli.\n"
-    "Ti viene data una porzione renderizzata di una pagina compilata.\n"
-    "\n"
-    "CONTESTO IMPORTANTE\n"
-    "Circa l'80% delle immagini sono corrette e solo circa il 20% hanno davvero un problema.\n"
-    "Quindi NON devi cercare errori a tutti i costi.\n"
-    "Il valore predefinito deve essere good=true.\n"
-    "\n"
-    "OBIETTIVO UNICO\n"
-    "Devi decidere se il testo compilato è finito chiaramente nella riga o nel campo sbagliato.\n"
-    "Ignora contenuto dei dati, errori ortografici, completezza, allineamento orizzontale e testo leggermente basso.\n"
-    "\n"
-    "QUANDO METTERE good=false\n"
-    "Metti good=false SOLO se vedi chiaramente e senza dubbio che almeno una risposta appartiene visivamente alla riga sopra o sotto.\n"
-    "Esempi reali di good=false:\n"
-    "- il nome appare nel campo sotto invece che nella riga del nome;\n"
-    "- l'indirizzo appare nel campo del codice fiscale;\n"
-    "- la data appare nella riga sbagliata;\n"
-    "- una risposta invade un campo diverso ed è interpretabile come risposta di quel campo.\n"
-    "\n"
-    "QUANDO METTERE good=true\n"
-    "Metti good=true se il testo è solo leggermente basso, vicino alla linea, appoggiato alla linea, un po' sovrapposto alla linea o non perfettamente centrato.\n"
-    "Metti good=true se non sei sicuro.\n"
-    "Metti good=true se mancano etichette o contesto sufficienti per stabilire con certezza che il testo è nella riga sbagliata.\n"
-    "Metti good=true se non vedi campi compilati nella porzione mostrata.\n"
-    "\n"
-    "REGOLA DECISIONALE\n"
-    "good=false richiede evidenza forte.\n"
-    "Se il caso è ambiguo, borderline o incerto, rispondi good=true.\n"
-    "\n"
-    "Output: restituisci ESCLUSIVAMENTE un JSON valido, senza testo extra, con questo schema:\n"
-    "{\n"
-    "  \"good\": true|false,\n"
-    "  \"confidence\": 0.0-1.0,\n"
-    "  \"reason\": \"short_reason\"\n"
-    "}\n"
+    "Check only if the filled values are visually written in the correct row or field.\n"
+    "Verify that names, dates, cities, tax codes and other answers are aligned with their correct labels and not shifted into the row below.\n"
+    "Do NOT validate the correctness of the data itself, only the visual placement.\n"
+    "Set good=false ONLY if a value is clearly written in the wrong row or wrong field.\n"
+    "Return ONLY valid JSON: {\"good\": true|false, \"confidence\": 0.0-1.0}"
 )
 
 
@@ -250,13 +215,12 @@ def qc_docx_render_first_page(
 
     _convert_docx_to_pdf(docx_path=docx_path, pdf_path=pdf_path)
     _render_first_page_png(pdf_path=pdf_path, png_path=png_path, zoom=2.0)
-    crop_png_path = base_dir / "qc_preview_first_page_q2.png"
+    crop_png_path = base_dir / "qc_preview_first_page_middle.png"
 
-    _crop_vertical_quarter(
-        input_png_path=png_path,
-        output_png_path=crop_png_path,
-        quarter_index=2,
-    )
+   _crop_middle_area(
+       input_png_path=png_path,
+       output_png_path=crop_png_path,
+   )
 
     effective_key = (api_key or os.getenv("MISTRAL_API_KEY") or MISTRAL_API_KEY or "").strip()
     if not effective_key:
