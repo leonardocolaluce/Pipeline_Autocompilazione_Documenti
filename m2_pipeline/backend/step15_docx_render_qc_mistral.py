@@ -52,6 +52,9 @@ Examples:
 "telefono" -> "test@gmail.com" = false
 "Codice fiscale" -> "ROMA" = false
 "e-mail" -> "3341983810" = false
+
+Return ONLY valid JSON with this exact schema:
+{"good": true|false, "confidence": 0.0-1.0}
 """
 
 
