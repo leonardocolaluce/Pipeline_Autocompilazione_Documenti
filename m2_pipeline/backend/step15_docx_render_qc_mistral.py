@@ -41,11 +41,14 @@ def _encode_image_data_uri(image_path: Path) -> str:
 
 
 QC_SYSTEM_PROMPT = (
-    "Check only if the filled values are visually written in the correct row or field.\n"
-    "Verify that names, dates, cities, tax codes and other answers are aligned with their correct labels and not shifted into the row below.\n"
-    "Do NOT validate the correctness of the data itself, only the visual placement.\n"
-    "Set good=false ONLY if a value is clearly written in the wrong row or wrong field.\n"
-    "Return ONLY valid JSON: {\"good\": true|false, \"confidence\": 0.0-1.0}"
+    "Check only if filled text is shifted into the row below its correct row.\n"
+    "Do not check if the data value is correct or belongs semantically to that label.\n"
+    "Set good=false only when the visual vertical position is clearly one row too low.\n"
+   "Set good=false only when a value clearly belongs to the field above but appears on the line below.\n"
+    "Example BAD: the name line is empty and the name appears on the birth place line.\n"
+    "Example BAD: the birth place line is empty and the city appears on the residence line.\n"
+    "Example BAD: the residence line is empty and the residence city appears on the line below.\n"
+    "Return ONLY JSON: {\"good\": true|false, \"confidence\": 0.0-1.0}"
 )
 
 
