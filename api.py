@@ -18,6 +18,9 @@ import re
 
 app = FastAPI(title="Pipeline Autocompilazione")
 
+PROJECT_ROOT = Path(__file__).resolve().parent
+LAST_JOB_PATH = PROJECT_ROOT / "output" / "last_job.json"
+
 # === Job State Management ===
 jobs: Dict[str, Dict[str, Any]] = {}
 def cancel_previous_jobs():
@@ -26,7 +29,6 @@ def cancel_previous_jobs():
             job["status"] = "cancelled"
             job["progress"] = "Job annullato perché è stato avviato un nuovo upload"
 
-PROJECT_ROOT = Path(__file__).resolve().parent
 M1_PATH = PROJECT_ROOT / "m1_pipeline" / "main.py"
 M2_PATH = PROJECT_ROOT / "m2_pipeline" / "main.py"
 
@@ -220,6 +222,13 @@ async def upload(file: UploadFile = File(...), data_json: UploadFile = File(...)
         "progress": "In attesa di elaborazione",
         "doc_name": file.filename,
     }
+
+    LAST_JOB_PATH.parent.mkdir(parents=True, exist_ok=True)
+    LAST_JOB_PATH.write_text(json.dumps({
+        "job_id": job_id,
+        "doc_name": file.filename,
+        "status": "queued"
+    }), encoding="utf-8")
     
     # Avvia elaborazione in background
     background_tasks.add_task(run_pipeline_task, job_id, str(doc_path), str(data_json_path))
@@ -230,6 +239,15 @@ async def upload(file: UploadFile = File(...), data_json: UploadFile = File(...)
         "message": "Upload ricevuto, elaborazione in corso..."
     }
 
+@app.get("/last-job")
+async def last_job():
+    if not LAST_JOB_PATH.exists():
+        return {"job_id": None}
+
+    try:
+        return json.loads(LAST_JOB_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return {"job_id": None}
 
 @app.get("/status/{job_id}")
 async def get_status(job_id: str):
