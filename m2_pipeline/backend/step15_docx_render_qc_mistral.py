@@ -217,10 +217,10 @@ def qc_docx_render_first_page(
     _render_first_page_png(pdf_path=pdf_path, png_path=png_path, zoom=2.0)
     crop_png_path = base_dir / "qc_preview_first_page_middle.png"
 
-   _crop_middle_area(
+    _crop_middle_area(
        input_png_path=png_path,
        output_png_path=crop_png_path,
-   )
+    )
 
     effective_key = (api_key or os.getenv("MISTRAL_API_KEY") or MISTRAL_API_KEY or "").strip()
     if not effective_key:
