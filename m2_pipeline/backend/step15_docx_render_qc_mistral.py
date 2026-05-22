@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+from PIL import Image
 import argparse
 import base64
 import json
@@ -14,6 +14,24 @@ import fitz  # PyMuPDF
 
 from .step00_config import MISTRAL_API_KEY, MISTRAL_MODEL
 
+def _crop_vertical_quarter(
+    *,
+    input_png_path: Path,
+    output_png_path: Path,
+    quarter_index: int,
+) -> None:
+    if quarter_index not in {1, 2, 3, 4}:
+        raise ValueError("quarter_index deve essere tra 1 e 4")
+
+    img = Image.open(input_png_path)
+    width, height = img.size
+
+    y1 = int(height * (quarter_index - 1) / 4)
+    y2 = int(height * quarter_index / 4)
+
+    cropped = img.crop((0, y1, width, y2))
+    output_png_path.parent.mkdir(parents=True, exist_ok=True)
+    cropped.save(output_png_path)
 
 def _encode_image_data_uri(image_path: Path) -> str:
     data = image_path.read_bytes()
@@ -229,13 +247,20 @@ def qc_docx_render_first_page(
 
     _convert_docx_to_pdf(docx_path=docx_path, pdf_path=pdf_path)
     _render_first_page_png(pdf_path=pdf_path, png_path=png_path, zoom=2.0)
+    crop_png_path = base_dir / "qc_preview_first_page_q2.png"
+
+    _crop_vertical_quarter(
+        input_png_path=png_path,
+        output_png_path=crop_png_path,
+        quarter_index=2,
+    )
 
     effective_key = (api_key or os.getenv("MISTRAL_API_KEY") or MISTRAL_API_KEY or "").strip()
     if not effective_key:
         raise RuntimeError("MISTRAL_API_KEY mancante (env o step00_config).")
     effective_model = (model or os.getenv("MISTRAL_MODEL") or MISTRAL_MODEL or "").strip() or "mistral-medium-2508"
 
-    raw = _call_mistral_vision(api_key=effective_key, model=effective_model, image_path=png_path)
+    raw = _call_mistral_vision(api_key=effective_key, model=effective_model, image_path=crop_png_path)
     text = _extract_text(raw)
     qc = _coerce_qc_json(text)
 
@@ -255,6 +280,7 @@ def qc_docx_render_first_page(
         "compiled_docx": str(docx_path),
         "pdf_first_page": str(pdf_path),
         "png_first_page": str(png_path),
+        "png_crop": str(crop_png_path),
     }
     out_json.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return payload
