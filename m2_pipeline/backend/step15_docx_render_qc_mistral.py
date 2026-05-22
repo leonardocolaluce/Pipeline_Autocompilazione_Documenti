@@ -40,16 +40,19 @@ def _encode_image_data_uri(image_path: Path) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-QC_SYSTEM_PROMPT = (
-    "Check only if filled text is shifted into the row below its correct row.\n"
-    "Do not check if the data value is correct or belongs semantically to that label.\n"
-    "Set good=false only when the visual vertical position is clearly one row too low.\n"
-   "Set good=false only when a value clearly belongs to the field above but appears on the line below.\n"
-    "Example BAD: the name line is empty and the name appears on the birth place line.\n"
-    "Example BAD: the birth place line is empty and the city appears on the residence line.\n"
-    "Example BAD: the residence line is empty and the residence city appears on the line below.\n"
-    "Return ONLY JSON: {\"good\": true|false, \"confidence\": 0.0-1.0}"
-)
+QC_SYSTEM_PROMPT  = """
+Check only if values are written in the correct semantic row near their label.
+Set good=false if a field contains the wrong type of information because values shifted into another row.
+Examples of WRONG formatting: a birth date written inside the "Via" field, a full name written where a date should be, an email written in the phone field, a city written in the codice fiscale field, or a phone number written in the email field.
+If fields are visually shifted and labels no longer match the correct value type, return good=false.
+
+Examples:
+"nato il" -> "Mario Rossi" = false
+"Via" -> "22/01/1998" = false
+"telefono" -> "test@gmail.com" = false
+"Codice fiscale" -> "ROMA" = false
+"e-mail" -> "3341983810" = false
+"""
 
 
 def _call_mistral_vision(*, api_key: str, model: str, image_path: Path, timeout_sec: int = 180) -> dict[str, Any]:
