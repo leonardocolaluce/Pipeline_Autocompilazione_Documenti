@@ -52,6 +52,11 @@ Examples:
 "telefono" -> "test@gmail.com" = false
 "Codice fiscale" -> "ROMA" = false
 "e-mail" -> "3341983810" = false
+"sede" -> "Mario Rossi S.r.l." = false
+"indirizzo e-mail/PEC" -> "123456789" = false
+"Partita IVA" -> "Via Roma 24, Milano" = false
+"C.F." -> "Via Verdi 12" = false
+"indirizzo e-mail/PEC" -> "3472281992" = false
 
 Return ONLY valid JSON with this exact schema:
 {"good": true|false, "confidence": 0.0-1.0}
