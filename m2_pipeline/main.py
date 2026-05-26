@@ -373,7 +373,7 @@ def run_all(
         except Exception:
             validate_res = {"removed_count": 0}
     else:
-        write_res = run_write_docx(output_dir, bundle_name, venv_python)
+        write_res = {"compiled_output": str(provisional_docx_path)}
 
         # --- QC render (Mistral) on provisional DOCX before generating preview ---
         try:
