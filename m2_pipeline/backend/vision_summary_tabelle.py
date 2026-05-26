@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib import request
 from urllib.error import HTTPError, URLError
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 MISTRAL_API_URL = os.getenv("MISTRAL_API_URL", "https://api.mistral.ai/v1/chat/completions").strip()
@@ -774,12 +775,13 @@ def run_vision_tables(
         raise FileNotFoundError(f"JSON dati non trovato: {data_path}")
     company_data = json.loads(data_path.read_text(encoding="utf-8"))
 
+    # CELLA 2 — DOPO (PARALLELO 2 WORKER, output deterministico)
     matches: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
     filled_results: list[dict[str, Any]] = []
-    seq = 0
 
-    for img in image_paths:
+    def _process_one(img: Path) -> tuple[str, dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+        # returns: (img.name, detected_row, filled_row, matches_local_without_ids)
         raw = _call_mistral(
             api_key=api_key,
             model=(model or DEFAULT_MODEL),
@@ -792,22 +794,21 @@ def run_vision_tables(
         text = _extract_text_from_response(raw)
         obj, err = _extract_first_json(text or "")
         if err:
-            tables = []
+            tables: list[dict[str, Any]] = []
         else:
             tables = (_coerce_tables_only(obj).get("tables") or [])
             if not isinstance(tables, list):
                 tables = []
-
-        # Snapshot detected tables (same structure as CLI output).
-        results.append({"file": img.name, "tables": tables})
-
+    
+        detected_row = {"file": img.name, "tables": tables}
+    
         allowed_table_ids = {str(t.get("table_id")) for t in tables if isinstance(t, dict) and t.get("table_id")}
         expected_by_id = {
             str(t.get("table_id")): {"table_type": t.get("table_type"), "headers": t.get("headers")}
             for t in tables
             if isinstance(t, dict) and t.get("table_id")
         }
-
+    
         filled_tables: list[dict[str, Any]] = []
         if allowed_table_ids:
             raw_fill = _call_mistral_fill(
@@ -827,23 +828,24 @@ def run_vision_tables(
                 filled = {"tables": []}
             else:
                 filled = _coerce_filled_tables_only(fill_obj, allowed_table_ids, expected_by_id)
-
+    
             filled_tables = filled.get("tables") or []
             if not isinstance(filled_tables, list):
                 filled_tables = []
             filled_tables = _project_second_output_onto_first(tables, filled_tables)
             filled_tables = _fill_placeholders_for_missing_tables(tables, filled_tables)
-
-        # Snapshot filled tables (same structure as CLI output).
-        filled_results.append({"file": img.name, "tables": filled_tables})
-
-        # FLATTEN -> matches
+    
+        filled_row = {"file": img.name, "tables": filled_tables}
+    
+        matches_local: list[dict[str, Any]] = []
+    
+        # FLATTEN -> matches (senza field_id; lo assegniamo dopo in modo deterministico)
         for t in filled_tables:
             if not isinstance(t, dict):
                 continue
             table_id = str(t.get("table_id") or "").strip()
             table_type = str(t.get("table_type") or "").strip().lower()
-
+    
             if table_type == "kv":
                 rows = t.get("rows") or []
                 if not isinstance(rows, list):
@@ -854,10 +856,8 @@ def run_vision_tables(
                     label = str(r.get("label") or "").strip()
                     value = str(r.get("value") or "").strip()
                     source = str(r.get("source") or "").strip()
-                    seq += 1
-                    matches.append(
+                    matches_local.append(
                         {
-                            "field_id": f"t{seq}",
                             "label": label or f"{table_id}:kv",
                             "value": value if value else None,
                             "source_path": source if source else None,
@@ -867,7 +867,7 @@ def run_vision_tables(
                             "table_type": "kv",
                         }
                     )
-
+    
             elif table_type == "grid":
                 grid = t.get("grid") or {}
                 if not isinstance(grid, dict):
@@ -876,8 +876,7 @@ def run_vision_tables(
                 if not isinstance(headers, list):
                     continue
                 headers = [str(h) for h in headers]
-
-                # New preferred format: grid.cells
+    
                 cells = grid.get("cells")
                 if isinstance(cells, list):
                     for cell in cells:
@@ -892,18 +891,13 @@ def run_vision_tables(
                             continue
                         while len(headers) <= cidx:
                             headers.append(f"col_{len(headers)}")
-                        value = cell.get("value")
-                        value = "" if value is None else str(value).strip()
+                        value = "" if cell.get("value") is None else str(cell.get("value")).strip()
                         if not value:
                             continue
-                        source = cell.get("source")
-                        source = "" if source is None else str(source).strip()
-
-                        seq += 1
+                        source = "" if cell.get("source") is None else str(cell.get("source")).strip()
                         h = headers[cidx]
-                        matches.append(
+                        matches_local.append(
                             {
-                                "field_id": f"t{seq}",
                                 "label": f"{table_id} | {h} | row {ridx+1}",
                                 "value": value,
                                 "source_path": source if source else None,
@@ -916,8 +910,8 @@ def run_vision_tables(
                                 "col_header": h,
                             }
                         )
+    
                 else:
-                    # Backward compatibility: grid.rows dicts
                     rows = grid.get("rows") or []
                     if not isinstance(rows, list):
                         continue
@@ -929,10 +923,8 @@ def run_vision_tables(
                             value = "" if cell is None else str(cell).strip()
                             if not value:
                                 continue
-                            seq += 1
-                            matches.append(
+                            matches_local.append(
                                 {
-                                    "field_id": f"t{seq}",
                                     "label": f"{table_id} | {h} | row {ridx+1}",
                                     "value": value,
                                     "source_path": None,
@@ -945,6 +937,28 @@ def run_vision_tables(
                                     "col_header": h,
                                 }
                             )
+    
+        return img.name, detected_row, filled_row, matches_local
+    
+    
+    by_name: dict[str, tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]] = {}
+    
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        futures = [ex.submit(_process_one, img) for img in image_paths]
+        for fut in as_completed(futures):
+            name, detected_row, filled_row, matches_local = fut.result()
+            by_name[name] = (detected_row, filled_row, matches_local)
+    
+    # merge deterministico nell’ordine originale delle immagini
+    seq = 0
+    for img in image_paths:
+        detected_row, filled_row, matches_local = by_name[img.name]
+        results.append(detected_row)
+        filled_results.append(filled_row)
+        for m in matches_local:
+            seq += 1
+            m["field_id"] = f"t{seq}"
+            matches.append(m)
 
     out_payload = {
         "matches": matches,
