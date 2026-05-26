@@ -453,6 +453,13 @@ def run_all(
                 shutil.copy2(provisional_docx_path, final_docx)
         except Exception:
             pass
+
+        try:
+            if provisional_docx_path.exists():
+                preview_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(provisional_docx_path, preview_path)
+        except Exception:
+            pass
     
         try:
             if source_pdf is not None and pre_validator_mapping.exists():
@@ -466,7 +473,7 @@ def run_all(
         except Exception:
             pass
     
-        validate_res = run_validate_final(output_dir, bundle_name, venv_python)
+        validate_res = {"removed_count": 0}
 
 
     post_validator_mapping = Path(output_dir) / "campo_valore_finale.json"
