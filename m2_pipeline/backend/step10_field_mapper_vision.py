@@ -7,6 +7,7 @@ from .step08_mapping_builder import build_mapping_file
 from .step10_merge_vision_into_mapping import merge_vision_matches_into_mapping
 from .vision_summery import run_vision_mapping
 from .vision_summary_tabelle import run_vision_tables
+from concurrent.futures import ThreadPoolExecutor
 
 
 VISION_MATCH_FILENAME = "campo_valore_vision.json"
@@ -65,31 +66,36 @@ def map_bundle_fields_vision(
     tables_detect_out = Path(output_dir) / "tables_output.json"
     tables_filled_out = Path(output_dir) / "tables_filled_output.json"
     
-        
-    try:
-        vision_payload = run_vision_mapping(
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        f_vision = ex.submit(
+            run_vision_mapping,
             image_dir=image_dir,
             data_json_path=xml_json_path,
             out_json_path=vision_out,
         )
-    except Exception as e:
-        print(f"[LLM][vision-mapping] FAILED (fallback empty) err={type(e).__name__}: {e}", flush=True)
-        vision_payload = {"stats": {"filled": 0, "total": 0}}
-    
-    stats = (vision_payload or {}).get("stats") or {}
-    print(f"[LLM][vision-mapping] vision_found={stats.get('filled')}/{stats.get('total')}", flush=True)
-    
-    try:
-        tables_payload = run_vision_tables(
+        f_tables = ex.submit(
+            run_vision_tables,
             image_dir=image_dir,
             data_json_path=xml_json_path,
             out_json_path=tables_out,
             out_json_detect_path=tables_detect_out,
             out_json_filled_path=tables_filled_out,
         )
-    except Exception as e:
-        print(f"[LLM][vision-tables] FAILED (fallback empty) err={type(e).__name__}: {e}", flush=True)
-        tables_payload = {"stats": {"filled": 0, "total": 0}}
+    
+        try:
+            vision_payload = f_vision.result()
+        except Exception as e:
+            print(f"[LLM][vision-mapping] FAILED (fallback empty) err={type(e).__name__}: {e}", flush=True)
+            vision_payload = {"stats": {"filled": 0, "total": 0}}
+    
+        try:
+            tables_payload = f_tables.result()
+        except Exception as e:
+            print(f"[LLM][vision-tables] FAILED (fallback empty) err={type(e).__name__}: {e}", flush=True)
+            tables_payload = {"stats": {"filled": 0, "total": 0}}
+    
+    stats = (vision_payload or {}).get("stats") or {}
+    print(f"[LLM][vision-mapping] vision_found={stats.get('filled')}/{stats.get('total')}", flush=True)
     
     tstats = (tables_payload or {}).get("stats") or {}
     print(f"[LLM][vision-tables] vision_found={tstats.get('filled')}/{tstats.get('total')}", flush=True)
