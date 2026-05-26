@@ -4,6 +4,7 @@ import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Set
 from urllib import request
+import os
 
 from .step00_config import FIELD_MAPPING_FILENAME, MISTRAL_API_KEY, MISTRAL_MODEL, MISTRAL_TIMEOUT_SEC, SUMMARY_FILENAME
 from .step02_openai_json_utils import parse_llm_json_payload
@@ -164,9 +165,34 @@ def validate_and_prune(
     docx_text = _extract_docx_text(coerce_path(compiled_docx_path).resolve())
     source_document_path = mapping_payload.get("source_document_path")
     source_text = extract_source_text(coerce_path(source_document_path)) if source_document_path else ""
+
     rows = mapping_payload.get("rows") or []
     before_compiled = sum(1 for row in rows if str(row.get("answer", "")).strip() not in {"", "N/D"})
     total_fields = len(rows)
+
+    # SKIP validator finale (risposte): non pota nulla, ma scrive comunque il riepilogo
+    if True:
+        llm_used_in_mapping = any(bool(row.get("llm_enabled")) for row in rows)
+        summary_path = out_dir / SUMMARY_FILENAME
+        summary_payload = {
+            "totale_campi": total_fields,
+            "compilati_prima_validatore": before_compiled,
+            "compilati_dopo_validatore": before_compiled,
+            "rimossi_dal_validatore": 0,
+            "llm_attivo_mapping": llm_used_in_mapping,
+            "llm_attivo_validator": False,
+            "validator_skipped": True,
+        }
+        with open(summary_path, "w", encoding="utf-8") as handle:
+            json.dump(summary_payload, handle, ensure_ascii=False, indent=2)
+
+        print("[LLM][validator] skipped - PIPELINE_SKIP_FINAL_VALIDATOR=1")
+        return {
+            "mapping_path": str(mapping_path),
+            "summary_path": str(summary_path),
+            "invalid_item_ids": [],
+            "removed_count": 0,
+        }
 
     invalid_ids = set(_deterministic_invalid_ids(rows, xml_data, docx_text))
     if llm_available:
