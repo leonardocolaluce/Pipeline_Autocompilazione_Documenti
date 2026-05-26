@@ -448,8 +448,9 @@ def run_all(
 
         try:
             if provisional_docx_path.exists():
-                preview_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(provisional_docx_path, preview_path)
+                final_docx = Path(output_dir) / FINAL_DOCX_FILENAME
+                final_docx.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(provisional_docx_path, final_docx)
         except Exception:
             pass
     
