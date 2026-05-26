@@ -88,7 +88,22 @@ def run_scan_m1(m1_dir: str, output_dir: str) -> dict:
 
 def run_classify_documents(m1_dir: str, output_dir: str) -> dict:
     bundles = discover_m1_bundles(Path(m1_dir))
-    classifications = classify_bundles(bundles)
+
+    # SKIP classificatore: tutti compilabili
+    classifications = [
+        {
+            "base_name": b.get("base_name"),
+            "has_fields": b.get("has_fields"),
+            "has_tables": b.get("has_tables"),
+            "is_compilable": True,
+            "confidence": 1.0,
+            "reason": "forced_all_compilable",
+            "classifier": "forced",
+            "llm_enabled": False,
+        }
+        for b in bundles
+    ]
+
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     out_path = out_dir / CLASSIFICATION_FILENAME
@@ -100,11 +115,12 @@ def run_classify_documents(m1_dir: str, output_dir: str) -> dict:
     }
     with open(out_path, "w", encoding="utf-8") as handle:
         json.dump(payload, handle, ensure_ascii=False, indent=2)
+
     return {
         "status": "ok",
         "step": "classify_documents",
         "output": str(out_path),
-        "compilable_count": sum(1 for item in classifications if item["is_compilable"]),
+        "compilable_count": len(classifications),
     }
 
 
