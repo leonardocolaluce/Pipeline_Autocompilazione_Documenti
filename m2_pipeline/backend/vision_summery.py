@@ -314,7 +314,7 @@ def run_vision_mapping(
             matches_for_page: list[dict[str, Any]] = []
 
             # --- INCOLLA QUI (IDENTICO) IL CODICE CHE AVEVI NEL VECCHIO LOOP
-            print(f"[LLM][vision-mapping] image={image_path.name}")
+            print(f"[LLM][vision-mapping] start image={image_path.name}", flush=True)
             image_parts = [{"type": "image_url", "image_url": _encode_image_data_uri(image_path)}]
     
     
@@ -468,7 +468,7 @@ def run_vision_mapping(
             for match in coerced.get("matches") or []:
                 match["image_page"] = image_path.name
                 matches_for_page.append(match)
-
+            print(f"[LLM][vision-mapping] done image={image_path.name}", flush=True)
             return image_path.name, matches_for_page, None
 
         except Exception as e:
