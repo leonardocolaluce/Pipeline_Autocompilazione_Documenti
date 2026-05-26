@@ -15,8 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 from urllib import request
-
-
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from .step02_openai_json_utils import parse_llm_json_payload
 
 
@@ -310,161 +309,188 @@ def run_vision_mapping(
     all_matches: list[dict[str, Any]] = []
     page_errors: list[dict[str, Any]] = []
 
-    for image_path in image_paths:
-        print(f"[LLM][vision-mapping] image={image_path.name}")
-        image_parts = [{"type": "image_url", "image_url": _encode_image_data_uri(image_path)}]
-
-
-        body = {
-            "model": (model or DEFAULT_MODEL),
-            "temperature": 0,
-            "top_p": 1,
-            "max_tokens": max_tokens,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": (
-                        [
-                            {
-                                "type": "text",
-                                "text": (
-                                    "Sei un assistente per compilazione modulistica.\n"
-                                    "Input:\n"
-                                    "- 1 immagine (pagina del modulo) con campi evidenziati in rosso.\n"
-                                    "- 1 JSON dati azienda/anagrafica.\n\n"
-                                    "Obiettivo: estrarre i campi visibili e tentare un match con i dati, senza inventare.\n\n"
-                                    "REGOLE IMPORTANTI:\n"
-                                    "- Usa solo informazioni presenti nel JSON dati, ma puoi comporre valori da più campi quando il modulo richiede un dato completo, es. indirizzo + comune + provincia, oppure cognome + nome.\n"
-                                    "- Non inventare path: i path devono essere reali e riferiti al JSON esattamente come fornito.\n"
-                                    "- Distingui campi PERSONA (es. residenza persona) da campi AZIENDA (sede legale, P.IVA, ragione sociale). Se il JSON non ha residenza persona, metti N/D.\n"
-                                    "REGOLE PERSONA (SELEZIONE SOGGETTO):\n"
-                                    "- Nel JSON c'è spesso `soggetti_in_carica` (lista di persone).\n"
-                                    "- Devi scegliere UNA `persona_principale` e usarla per TUTTI i campi PERSONA (nome, cognome, nato/a il, nato/a a, CF persona), a meno che il modulo dica esplicitamente un altro ruolo (es. 'Direttore tecnico').\n"
-                                    "- Per campi tipo `Il sottoscritto`, `Il/La sottoscritto/a`, `dichiarante`, `legale rappresentante`, devi compilare con COGNOME + NOME della prima persona che compare nel json.\n"
-                                    "- Se usi COGNOME + NOME da `soggetti_in_carica[0]`, restituisci `value` come stringa combinata.\n"
-                                    "- Per ogni campo che contiene 'sottoscritto' / 'dichiarante' / 'legale rappresentante': se `soggetti_in_carica[0].cognome` e `soggetti_in_carica[0].nome` esistono, DEVI compilare: `source_path`=\"soggetti_in_carica[0]\" e `value`=\"<cognome> <nome>\" (un solo spazio, niente titoli tipo Sig./Dott., niente spazi doppi o finali), devi ovviamente riempire con il nome della stessa persona di cui metti gli altri dati come data nascita, titolo....\n"
-                                    "- Non lasciare vuoto `Il sottoscritto` se in `soggetti_in_carica[0]` esistono `cognome` e `nome` di almeno una persona.\n"
-                                    "  1) LEGALE RAPPRESENTANTE | RAPPRESENTANTE LEGALE | AMMINISTRATORE UNICO | AMMINISTRATORE DELEGATO | AD | CEO | CHIEF EXECUTIVE OFFICER | PRESIDENTE | PRESIDENT | MANAGING DIRECTOR | DIRETTORE GENERALE\n"
-                                    "  2) CFO | CHIEF FINANCIAL OFFICER | DIRETTORE FINANZIARIO | RESPONSABILE FINANZIARIO\n"
-                                    "  3) COO | CHIEF OPERATING OFFICER | DIRETTORE OPERATIVO\n"
-                                    "  4) CTO | CHIEF TECHNOLOGY OFFICER | DIRETTORE TECNICO | TECHNICAL DIRECTOR | IT MANAGER | RESPONSABILE IT\n"
-                                    "  5) CISO | CHIEF INFORMATION SECURITY OFFICER | RESPONSABILE SICUREZZA INFORMATICA\n"
-                                    "  6) CHRO | CHIEF HUMAN RESOURCES OFFICER | DIRETTORE RISORSE UMANE | HR MANAGER\n"
-                                    "- Se nessuna carica matcha, usa `soggetti_in_carica[0]`.\n"
-                                    "- Se il campo del modulo indica esplicitamente un ruolo (es. 'direttore tecnico'), allora scegli la prima persona che matcha quel ruolo.\n\n"
-                                    "REGOLE EMAIL/PEC:\n"
-                                    "- Se il campo chiede `email`, `e-mail`, `mail`, `indirizzo email`, e nel JSON esiste solo `mail_pec`, usa comunque una mail PEC disponibile.\n"
-                                    "- Se esistono più valori in `mail_pec`, preferisci il primo valore non vuoto, salvo che il campo chieda esplicitamente PEC: in quel caso usa la PEC più appropriata.\n\n"
-                                    "REGOLE SEDE/INDIRIZZO:\n"
-                                    "- Se il campo chiede `sede`, `sede legale`, `sede operativa`, `indirizzo sede`, usa 'sede_legale_operativa' se presente.\n"
-                                    "- Se il JSON è annidato sotto `azienda`, usa `azienda.sede_legale_operativa.indirizzo`.\n"
-                                    "- Non lasciare vuoto un campo `sede` se nel JSON esiste un indirizzo in `sede_legale_operativa.indirizzo`.\n\n"
-                                    "OUTPUT: rispondi con 3 sezioni in QUESTO ordine e con QUESTI titoli esatti:\n"
-                                    "=== CAMPI ===\n"
-                                    "Elenca i campi da compilare che vedi nell'immagine. Per ciascuno crea un oggetto con:\n"
-                                    "- field_id: string (es. \"f1\", \"f2\"...)\n"
-                                    "- label: testo del campo (es. \"Il/La sottoscritto/a\", \"nato/a a\", \"codice fiscale\")\n"
-                                    "- field_type: uno tra [\"text\", \"date\", \"checkbox\"]\n"
-                                    "\n"
-                                    "REGOLE DI ESTRAZIONE CAMPI (IMPORTANTI):\n"
-                                    "- Ogni SPAZIO DA COMPILARE è un campo distinto (linee vuote, underscore, puntini, spazi in tabelle, caselle/checkbox).\n"
-                                    "- NON unire più campi della stessa riga in un solo label.\n"
-                                    "- Se sulla stessa riga ci sono più spazi da compilare, crea più campi separati nell'ordine sinistra→destra.\n"
-                                    "- Esempio: \"Il/La sottoscritto/a ____ nato/a a ____ (prov. ____)\" sono 3 campi distinti.\n"
-                                    "- Un label non deve contenere più concetti tipo \"sottoscritto/a nato/a a (prov.)\" o \"residente a (prov.) indirizzo\": splitta in campi singoli.\n"
-                                    "- Per assegnare il label usa il testo più vicino al singolo spazio da compilare (a sinistra/destra e, se serve, sopra).\n"
-                                    "\n"
-                                    "=== DATI ===\n"
-                                    "Elenca i dati utili presenti nel JSON come lista di oggetti:\n"
-                                    "- path: path JSON reale (es. \"azienda.ragione_sociale\")\n"
-                                    "- value: valore (string/number/bool)\n"
-                                    "\n"
-                                    "=== MATCH ===\n"
-                                    "Produci un JSON valido (solo JSON, niente spiegazioni) con schema:\n"
-                                    "{\n"
-                                    "  \"matches\": [\n"
-                                    "    {\n"
-                                    "      \"field_id\": \"f1\",\n"
-                                    "      \"label\": \"...\",\n"
-                                    "      \"value\": \"...\" | null | true | false,\n"
-                                    "      \"source_path\": \"...\" | null,\n"
-                                    "      \"confidence\": 0.0\n"
-                                    "    }\n"
-                                    "  ]\n"
-                                    "}\n"
-                                    "- Se non trovi valore: value=null e source_path=null.\n"
-                                    "- confidence tra 0 e 1.\n\n"
-                                    "JSON DATI (riferimento unico):\n"
-                                    f"{json.dumps(data_json, ensure_ascii=False)}"
-                                ),
-                            },
-                        ]
-                        + image_parts
-                    ),
-                }
-            ],
-        }
-
-        req = request.Request(
-            MISTRAL_API_URL,
-            method="POST",
-            data=json.dumps(body).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-        )
-
-        last_exc = None
-        for attempt in range(6):
-            try:
-                with request.urlopen(req, timeout=180) as resp:
-                    raw = json.loads(resp.read().decode("utf-8"))
-                last_exc = None
-                break
-            except HTTPError as exc:
-                last_exc = exc
-                if exc.code != 429:
-                    raise
-                wait_s = min(120, 10 * (2 ** attempt))  # 10s,20s,40s,80s,120s,120s
-                print(f"[LLM][vision-mapping] 429 rate limit, retry in {wait_s}s (attempt {attempt+1}/6)")
-                time.sleep(wait_s)
-
-        if last_exc is not None:
-            raise last_exc
-
-
-        # First try: robust JSON extraction from the raw API payload.
-        match_obj = None
-        match_err = None
+    def _process_one(image_path: Path) -> tuple[str, list[dict[str, Any]], dict[str, Any] | None]:
         try:
-            parsed = parse_llm_json_payload(raw)
-            if isinstance(parsed, (dict, list)):
-                match_obj = parsed if isinstance(parsed, dict) else {"matches": parsed}
-        except Exception as exc:
-            match_err = str(exc)
+            matches_for_page: list[dict[str, Any]] = []
 
-        # Fallback: parse from extracted text using the MATCH marker.
-        if match_obj is None:
-            text = _extract_text_from_response(raw)
-            match_obj, match_err = _extract_match_json(text or "")
-            if match_obj is None:
-                # Non interrompere l'intera pipeline per una singola pagina con risposta
-                # malformata (succede spesso dopo 429 / output troncato). Prosegui.
-                page_errors.append(
+            # --- INCOLLA QUI (IDENTICO) IL CODICE CHE AVEVI NEL VECCHIO LOOP
+            print(f"[LLM][vision-mapping] image={image_path.name}")
+            image_parts = [{"type": "image_url", "image_url": _encode_image_data_uri(image_path)}]
+    
+    
+            body = {
+                "model": (model or DEFAULT_MODEL),
+                "temperature": 0,
+                "top_p": 1,
+                "max_tokens": max_tokens,
+                "messages": [
                     {
+                        "role": "user",
+                        "content": (
+                            [
+                                {
+                                    "type": "text",
+                                    "text": (
+                                        "Sei un assistente per compilazione modulistica.\n"
+                                        "Input:\n"
+                                        "- 1 immagine (pagina del modulo) con campi evidenziati in rosso.\n"
+                                        "- 1 JSON dati azienda/anagrafica.\n\n"
+                                        "Obiettivo: estrarre i campi visibili e tentare un match con i dati, senza inventare.\n\n"
+                                        "REGOLE IMPORTANTI:\n"
+                                        "- Usa solo informazioni presenti nel JSON dati, ma puoi comporre valori da più campi quando il modulo richiede un dato completo, es. indirizzo + comune + provincia, oppure cognome + nome.\n"
+                                        "- Non inventare path: i path devono essere reali e riferiti al JSON esattamente come fornito.\n"
+                                        "- Distingui campi PERSONA (es. residenza persona) da campi AZIENDA (sede legale, P.IVA, ragione sociale). Se il JSON non ha residenza persona, metti N/D.\n"
+                                        "REGOLE PERSONA (SELEZIONE SOGGETTO):\n"
+                                        "- Nel JSON c'è spesso `soggetti_in_carica` (lista di persone).\n"
+                                        "- Devi scegliere UNA `persona_principale` e usarla per TUTTI i campi PERSONA (nome, cognome, nato/a il, nato/a a, CF persona), a meno che il modulo dica esplicitamente un altro ruolo (es. 'Direttore tecnico').\n"
+                                        "- Per campi tipo `Il sottoscritto`, `Il/La sottoscritto/a`, `dichiarante`, `legale rappresentante`, devi compilare con COGNOME + NOME della prima persona che compare nel json.\n"
+                                        "- Se usi COGNOME + NOME da `soggetti_in_carica[0]`, restituisci `value` come stringa combinata.\n"
+                                        "- Per ogni campo che contiene 'sottoscritto' / 'dichiarante' / 'legale rappresentante': se `soggetti_in_carica[0].cognome` e `soggetti_in_carica[0].nome` esistono, DEVI compilare: `source_path`=\"soggetti_in_carica[0]\" e `value`=\"<cognome> <nome>\" (un solo spazio, niente titoli tipo Sig./Dott., niente spazi doppi o finali), devi ovviamente riempire con il nome della stessa persona di cui metti gli altri dati come data nascita, titolo....\n"
+                                        "- Non lasciare vuoto `Il sottoscritto` se in `soggetti_in_carica[0]` esistono `cognome` e `nome` di almeno una persona.\n"
+                                        "  1) LEGALE RAPPRESENTANTE | RAPPRESENTANTE LEGALE | AMMINISTRATORE UNICO | AMMINISTRATORE DELEGATO | AD | CEO | CHIEF EXECUTIVE OFFICER | PRESIDENTE | PRESIDENT | MANAGING DIRECTOR | DIRETTORE GENERALE\n"
+                                        "  2) CFO | CHIEF FINANCIAL OFFICER | DIRETTORE FINANZIARIO | RESPONSABILE FINANZIARIO\n"
+                                        "  3) COO | CHIEF OPERATING OFFICER | DIRETTORE OPERATIVO\n"
+                                        "  4) CTO | CHIEF TECHNOLOGY OFFICER | DIRETTORE TECNICO | TECHNICAL DIRECTOR | IT MANAGER | RESPONSABILE IT\n"
+                                        "  5) CISO | CHIEF INFORMATION SECURITY OFFICER | RESPONSABILE SICUREZZA INFORMATICA\n"
+                                        "  6) CHRO | CHIEF HUMAN RESOURCES OFFICER | DIRETTORE RISORSE UMANE | HR MANAGER\n"
+                                        "- Se nessuna carica matcha, usa `soggetti_in_carica[0]`.\n"
+                                        "- Se il campo del modulo indica esplicitamente un ruolo (es. 'direttore tecnico'), allora scegli la prima persona che matcha quel ruolo.\n\n"
+                                        "REGOLE EMAIL/PEC:\n"
+                                        "- Se il campo chiede `email`, `e-mail`, `mail`, `indirizzo email`, e nel JSON esiste solo `mail_pec`, usa comunque una mail PEC disponibile.\n"
+                                        "- Se esistono più valori in `mail_pec`, preferisci il primo valore non vuoto, salvo che il campo chieda esplicitamente PEC: in quel caso usa la PEC più appropriata.\n\n"
+                                        "REGOLE SEDE/INDIRIZZO:\n"
+                                        "- Se il campo chiede `sede`, `sede legale`, `sede operativa`, `indirizzo sede`, usa 'sede_legale_operativa' se presente.\n"
+                                        "- Se il JSON è annidato sotto `azienda`, usa `azienda.sede_legale_operativa.indirizzo`.\n"
+                                        "- Non lasciare vuoto un campo `sede` se nel JSON esiste un indirizzo in `sede_legale_operativa.indirizzo`.\n\n"
+                                        "OUTPUT: rispondi con 3 sezioni in QUESTO ordine e con QUESTI titoli esatti:\n"
+                                        "=== CAMPI ===\n"
+                                        "Elenca i campi da compilare che vedi nell'immagine. Per ciascuno crea un oggetto con:\n"
+                                        "- field_id: string (es. \"f1\", \"f2\"...)\n"
+                                        "- label: testo del campo (es. \"Il/La sottoscritto/a\", \"nato/a a\", \"codice fiscale\")\n"
+                                        "- field_type: uno tra [\"text\", \"date\", \"checkbox\"]\n"
+                                        "\n"
+                                        "REGOLE DI ESTRAZIONE CAMPI (IMPORTANTI):\n"
+                                        "- Ogni SPAZIO DA COMPILARE è un campo distinto (linee vuote, underscore, puntini, spazi in tabelle, caselle/checkbox).\n"
+                                        "- NON unire più campi della stessa riga in un solo label.\n"
+                                        "- Se sulla stessa riga ci sono più spazi da compilare, crea più campi separati nell'ordine sinistra→destra.\n"
+                                        "- Esempio: \"Il/La sottoscritto/a ____ nato/a a ____ (prov. ____)\" sono 3 campi distinti.\n"
+                                        "- Un label non deve contenere più concetti tipo \"sottoscritto/a nato/a a (prov.)\" o \"residente a (prov.) indirizzo\": splitta in campi singoli.\n"
+                                        "- Per assegnare il label usa il testo più vicino al singolo spazio da compilare (a sinistra/destra e, se serve, sopra).\n"
+                                        "\n"
+                                        "=== DATI ===\n"
+                                        "Elenca i dati utili presenti nel JSON come lista di oggetti:\n"
+                                        "- path: path JSON reale (es. \"azienda.ragione_sociale\")\n"
+                                        "- value: valore (string/number/bool)\n"
+                                        "\n"
+                                        "=== MATCH ===\n"
+                                        "Produci un JSON valido (solo JSON, niente spiegazioni) con schema:\n"
+                                        "{\n"
+                                        "  \"matches\": [\n"
+                                        "    {\n"
+                                        "      \"field_id\": \"f1\",\n"
+                                        "      \"label\": \"...\",\n"
+                                        "      \"value\": \"...\" | null | true | false,\n"
+                                        "      \"source_path\": \"...\" | null,\n"
+                                        "      \"confidence\": 0.0\n"
+                                        "    }\n"
+                                        "  ]\n"
+                                        "}\n"
+                                        "- Se non trovi valore: value=null e source_path=null.\n"
+                                        "- confidence tra 0 e 1.\n\n"
+                                        "JSON DATI (riferimento unico):\n"
+                                        f"{json.dumps(data_json, ensure_ascii=False)}"
+                                    ),
+                                },
+                            ]
+                            + image_parts
+                        ),
+                    }
+                ],
+            }
+    
+            req = request.Request(
+                MISTRAL_API_URL,
+                method="POST",
+                data=json.dumps(body).encode("utf-8"),
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+            )
+    
+            last_exc = None
+            for attempt in range(6):
+                try:
+                    with request.urlopen(req, timeout=180) as resp:
+                        raw = json.loads(resp.read().decode("utf-8"))
+                    last_exc = None
+                    break
+                except HTTPError as exc:
+                    last_exc = exc
+                    if exc.code != 429:
+                        raise
+                    wait_s = min(120, 10 * (2 ** attempt))  # 10s,20s,40s,80s,120s,120s
+                    print(f"[LLM][vision-mapping] 429 rate limit, retry in {wait_s}s (attempt {attempt+1}/6)")
+                    time.sleep(wait_s)
+    
+            if last_exc is not None:
+                raise last_exc
+    
+    
+            # First try: robust JSON extraction from the raw API payload.
+            match_obj = None
+            match_err = None
+            try:
+                parsed = parse_llm_json_payload(raw)
+                if isinstance(parsed, (dict, list)):
+                    match_obj = parsed if isinstance(parsed, dict) else {"matches": parsed}
+            except Exception as exc:
+                match_err = str(exc)
+    
+            # Fallback: parse from extracted text using the MATCH marker.
+            if match_obj is None:
+                text = _extract_text_from_response(raw)
+                match_obj, match_err = _extract_match_json(text or "")
+                if match_obj is None:
+                    # Non interrompere l'intera pipeline per una singola pagina con risposta
+                    # malformata (succede spesso dopo 429 / output troncato). Prosegui.
+                    err = {
                         "image": image_path.name,
                         "error": match_err or "Impossibile estrarre JSON dal modello.",
                         "text_excerpt": (text or "")[:600],
                     }
-                )
-                print(f"[LLM][vision-mapping] WARN: skip {image_path.name} - {match_err or 'no_json'}")
-                continue
-        coerced = _coerce_match_output(match_obj, data_json)
-        coerced = _force_sottoscritto_from_person_paths(coerced, data_json)
-        for match in coerced.get("matches") or []:
-            match["image_page"] = image_path.name
-            all_matches.append(match)
+                    print(f"[LLM][vision-mapping] WARN: skip {image_path.name} - {match_err or 'no_json'}")
+                    return image_path.name, [], err
+            # Poi lascia questo pezzo sotto (è la sola parte “diversa”):
+
+            coerced = _coerce_match_output(match_obj, data_json)
+            coerced = _force_sottoscritto_from_person_paths(coerced, data_json)
+            for match in coerced.get("matches") or []:
+                match["image_page"] = image_path.name
+                matches_for_page.append(match)
+
+            return image_path.name, matches_for_page, None
+
+        except Exception as e:
+            err = {"image": image_path.name, "error": f"{type(e).__name__}: {e}"}
+            return image_path.name, [], err
+
+    results_by_image: dict[str, list[dict[str, Any]]] = {}
+    errors_by_image: dict[str, dict[str, Any]] = {}
+
+    with ThreadPoolExecutor(max_workers=2) as ex:
+        futures = [ex.submit(_process_one, p) for p in image_paths]
+        for fut in as_completed(futures):
+            key, matches_for_page, err = fut.result()
+            results_by_image[key] = matches_for_page
+            if err is not None:
+                errors_by_image[key] = err
+
+    for key in sorted(results_by_image.keys()):
+        all_matches.extend(results_by_image[key])
+    for key in sorted(errors_by_image.keys()):
+        page_errors.append(errors_by_image[key])
+
 
     coerced = {
         "matches": all_matches,
