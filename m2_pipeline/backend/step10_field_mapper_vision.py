@@ -66,7 +66,7 @@ def map_bundle_fields_vision(
     tables_detect_out = Path(output_dir) / "tables_output.json"
     tables_filled_out = Path(output_dir) / "tables_filled_output.json"
     
-    with ThreadPoolExecutor(max_workers=2) as ex:
+    with ThreadPoolExecutor(max_workers=4) as ex:
         f_vision = ex.submit(
             run_vision_mapping,
             image_dir=image_dir,
