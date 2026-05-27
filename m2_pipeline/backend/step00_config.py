@@ -22,6 +22,6 @@ FIELD_MAPPING_FILENAME = "campo_valore.json"
 FINAL_DOCX_FILENAME = "documento_compilato_finale.docx"
 SUMMARY_FILENAME = "riepilogo_compilazione.json"
 
-MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "6VNEHKbfEDGTobcVJyKRXjJzK9N73kNI").strip()
+MISTRAL_API_KEY = os.getenv("MISTRAL_API_KEY", "i58x3rBFunIs5n7OOYyDsRoSPFigCRy0").strip()
 MISTRAL_MODEL = os.getenv("MISTRAL_MODEL", "mistral-medium-2508").strip()
 MISTRAL_TIMEOUT_SEC = int(os.getenv("MISTRAL_TIMEOUT_SEC", "180"))
