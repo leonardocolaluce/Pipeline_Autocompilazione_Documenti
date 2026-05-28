@@ -24,6 +24,7 @@ from backend.step06_xml_to_json_bridge import convert_xml_with_existing_script
 from backend.step10_merge_tables_into_mapping import merge_tables_filled_into_mapping
 from backend.step14_regex_validator import clean_mapping_with_regex_rules
 from backend.step15_docx_render_qc_mistral import qc_docx_render_first_page
+from backend.step11_adobe_pdf_to_docx import convert_pdf_to_docx_adobe
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -373,98 +374,38 @@ def run_all(
         except Exception:
             validate_res = {"removed_count": 0}
     else:
-        write_res = {"compiled_output": str(provisional_docx_path)}
-
-        # --- QC render (Mistral) on provisional DOCX before generating preview ---
-        try:
-            source_docx = resolve_source_docx(bundle_name)
-            if source_docx is not None and pre_validator_mapping.exists():
-                # First pass with default offset (WORD_Y_OFFSET unset/0).
-                os.environ.pop("WORD_Y_OFFSET", None)
-                write_docx_preview_from_answers_json(
-                    source_docx,
-                    pre_validator_mapping,
-                    provisional_docx_path,
-                    color_hex="000000",
-                )
-                try:
-                    st = provisional_docx_path.stat()
-                    print(
-                        f"[QC] provisional_written path={provisional_docx_path} "
-                        f"size={st.st_size} mtime={st.st_mtime} WORD_Y_OFFSET_env={os.getenv('WORD_Y_OFFSET')}",
-                        flush=True,
-                    )
-                except Exception as e:
-                    print(f"[QC] provisional_written stat_error={e}", flush=True)
-                qc_res = qc_docx_render_first_page(
-                    compiled_docx_path=provisional_docx_path,
-                    out_json_path=qc_json_path,
-                    work_dir=Path(output_dir),
-                )
-                qc_good = bool(qc_res.get("good", True))
-                qc_conf = float(qc_res.get("confidence", 0.0) or 0.0)
-                
-                if not qc_good and qc_conf >= 0.90:
-                    print(
-                        f"[QC_DECISION] RISCRIVO documento: good={qc_good} confidence={qc_conf} "
-                        f"reason={qc_res.get('reason')} -> applying WORD_Y_OFFSET=-10",
-                        flush=True,
-                    )
-                    # Re-write with vertical shift up.
-                    os.environ["WORD_Y_OFFSET"] = "-10"
-                    write_docx_preview_from_answers_json(
-                        source_docx,
-                        pre_validator_mapping,
-                        provisional_docx_path,
-                        color_hex="000000",
-                    )
-                    try:
-                        st = provisional_docx_path.stat()
-                        print(
-                            f"[QC] provisional_rewritten path={provisional_docx_path} "
-                            f"size={st.st_size} mtime={st.st_mtime} WORD_Y_OFFSET_env={os.getenv('WORD_Y_OFFSET')}",
-                            flush=True,
-                        )
-                    except Exception as e:
-                        print(f"[QC] provisional_rewritten stat_error={e}", flush=True)
-                    # Best-effort: overwrite QC report with post-fix evaluation.
-                    try:
-                        qc_docx_render_first_page(
-                            compiled_docx_path=provisional_docx_path,
-                            out_json_path=qc_json_path,
-                            work_dir=Path(output_dir),
-                        )
-                    except Exception:
-                        pass
-                else:
-                    print(
-                        f"[QC_DECISION] LASCIO documento originale: good={qc_good} confidence={qc_conf} "
-                        f"reason={qc_res.get('reason')}",
-                        flush=True,
-                    )
-        except Exception as exc:
-            # QC is best-effort; do not block the pipeline if it fails.
-            print(f"[QC] skipped err={type(exc).__name__}: {exc}", flush=True)
-
-        try:
-            if provisional_docx_path.exists():
-                final_docx = Path(output_dir) / FINAL_DOCX_FILENAME
-                final_docx.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(provisional_docx_path, final_docx)
-        except Exception:
-            pass
-
-        try:
-            if provisional_docx_path.exists():
-                preview_path.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(provisional_docx_path, preview_path)
-        except Exception:
-            pass
+        # Word-mode: NON scrivere più DOCX via Word COM.
+        # 1) Converti il DOCX sorgente in PDF (una volta) e 2) scrivi direttamente sul PDF usando writer_pdf.
+        # 3) Converti i PDF risultanti in DOCX tramite Adobe API.
     
+        # 1) Risolvi DOCX sorgente
+        source_docx = resolve_source_docx(bundle_name)
+        if source_docx is None:
+            raise FileNotFoundError(f"Documento sorgente DOCX non trovato per bundle: {bundle_name}")
+    
+        # 2) Converti DOCX -> PDF sorgente (salvato dentro output_dir per tracciabilità)
+        source_pdf_tmp = Path(output_dir) / "__source_converted_from_docx.pdf"
+        convert_script = PROJECT_ROOT / "m1_pipeline" / "postprocessing" / "convert_docx_to_pdf.py"
         try:
-            if source_pdf is not None and pre_validator_mapping.exists():
+            import subprocess
+            subprocess.run(
+                [sys.executable, str(convert_script), "--input-docx", str(source_docx), "--out-pdf", str(source_pdf_tmp)],
+                check=True,
+                timeout=180,
+                capture_output=True,
+                text=True,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"DOCX->PDF fallita via convert_docx_to_pdf.py: {type(exc).__name__}: {exc}") from exc
+    
+        if not source_pdf_tmp.exists():
+            raise FileNotFoundError(f"PDF sorgente non generato: {source_pdf_tmp}")
+    
+        # 3) Scrivi PREVIEW PDF (da mapping provvisorio)
+        try:
+            if pre_validator_mapping.exists():
                 write_pdf_from_answers_json(
-                    source_pdf,
+                    source_pdf_tmp,
                     pre_validator_mapping,
                     preview_pdf_path,
                     color_rgb=(0, 0, 1),
@@ -473,7 +414,35 @@ def run_all(
         except Exception:
             pass
     
+        # 4) Scrivi FINAL PDF (da mapping principale campo_valore.json)
+        try:
+            mapping_src = Path(output_dir) / FIELD_MAPPING_FILENAME
+            if mapping_src.exists():
+                write_pdf_from_answers_json(
+                    source_pdf_tmp,
+                    mapping_src,
+                    compiled_pdf_path,
+                    color_rgb=(0, 0, 1),
+                    add_white_bg=False,
+                )
+        except Exception:
+            pass
+    
+        # 5) Converti i PDF prodotti in DOCX con Adobe API
+        try:
+            if preview_pdf_path.exists():
+                convert_pdf_to_docx_adobe(preview_pdf_path, preview_path)
+        except Exception as exc:
+            print(f"[ADOBE] preview pdf->docx skipped err={type(exc).__name__}: {exc}", flush=True)
+    
+        try:
+            if compiled_pdf_path.exists():
+                convert_pdf_to_docx_adobe(compiled_pdf_path, Path(output_dir) / FINAL_DOCX_FILENAME)
+        except Exception as exc:
+            print(f"[ADOBE] final pdf->docx skipped err={type(exc).__name__}: {exc}", flush=True)
+    
         validate_res = {"removed_count": 0}
+        write_res = {"compiled_output": str(Path(output_dir) / FINAL_DOCX_FILENAME)}
 
 
     post_validator_mapping = Path(output_dir) / "campo_valore_finale.json"
@@ -485,8 +454,10 @@ def run_all(
         pass
     
     try:
+        # Scrivi il FINAL PDF qui SOLO se l'input era davvero PDF.
+        # Se input è Word, il FINAL PDF è già stato scritto sopra usando source_pdf_tmp.
         mapping_src = Path(output_dir) / FIELD_MAPPING_FILENAME
-        if source_pdf is not None and mapping_src.exists():
+        if pdf_mode and source_pdf is not None and mapping_src.exists():
             write_pdf_from_answers_json(
                 source_pdf,
                 mapping_src,
