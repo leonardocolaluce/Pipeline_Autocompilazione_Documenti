@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -14,18 +15,6 @@ def main() -> int:
     out_docx = Path(args.out_docx).resolve()
     out_docx.parent.mkdir(parents=True, exist_ok=True)
 
-    # Add vendored Adobe SDK "src" to sys.path (since it's not a pip-installable project).
-    sdk_src = (
-        Path(__file__).resolve().parent
-        / "vendor"
-        / "PDFServicesSDK-PythonSamples"
-        / "adobe-dc-pdf-services-sdk-python"
-        / "src"
-    )
-    if not sdk_src.exists():
-        raise SystemExit(f"SDK src non trovato: {sdk_src}")
-    sys.path.insert(0, str(sdk_src))
-
     creds_path = os.getenv("ADOBE_CREDENTIALS_JSON_PATH", "").strip()
     if not creds_path:
         raise SystemExit("ADOBE_CREDENTIALS_JSON_PATH non impostata (deve puntare a pdfservices-api-credentials.json).")
@@ -36,7 +25,7 @@ def main() -> int:
     if not input_pdf.exists() or input_pdf.suffix.lower() != ".pdf":
         raise SystemExit(f"PDF input non valido: {input_pdf}")
 
-    # Adobe PDF Services SDK (vendored)
+    # Adobe PDF Services SDK (pip: pdfservices-sdk)
     try:
         from adobe.pdfservices.operation.auth.service_principal_credentials import ServicePrincipalCredentials
         from adobe.pdfservices.operation.pdf_services import PDFServices
@@ -48,8 +37,20 @@ def main() -> int:
     except Exception as e:
         raise SystemExit(f"Import SDK Adobe fallito: {e}")
 
-    # Credentials from JSON file
-    credentials = ServicePrincipalCredentials.from_file(creds_path)
+    # Read client_id/client_secret from credentials JSON
+    creds = json.loads(Path(creds_path).read_text(encoding="utf-8"))
+    cc = creds.get("client_credentials") or {}
+    client_id = cc.get("client_id")
+    client_secret = cc.get("client_secret")
+    if not client_id or not client_secret:
+        raise SystemExit(f"Credenziali non valide nel JSON: manca client_id/client_secret in {creds_path}")
+
+    credentials = (
+        ServicePrincipalCredentials.builder()
+        .with_client_id(client_id)
+        .with_client_secret(client_secret)
+        .build()
+    )
     pdf_services = PDFServices(credentials=credentials)
 
     # Upload PDF
