@@ -7,7 +7,7 @@ import subprocess
 
 # === ADOBE CREDS (HARDCODED) ===
 # Incolla qui le credenziali Adobe (NON consigliato per repo/git, ma richiesto da te).
-ADOBE_CREDENTIALS_JSON_PATH = r"pdfservices-api-credentials.json"
+ADOBE_CREDENTIALS_JSON_PATH = str(Path(__file__).resolve().parent / "pdfservices-api-credentials.json")
 
 # Se la tua integrazione Adobe richiede altri campi, incollali qui e verranno passati allo script.
 ADOBE_ORG_ID = "INCOLLA_QUI_ORG_ID"              # opzionale
