@@ -414,20 +414,6 @@ def run_all(
         except Exception:
             pass
     
-        # 4) Scrivi FINAL PDF (da mapping principale campo_valore.json)
-        try:
-            mapping_src = Path(output_dir) / FIELD_MAPPING_FILENAME
-            if mapping_src.exists():
-                write_pdf_from_answers_json(
-                    source_pdf_tmp,
-                    mapping_src,
-                    compiled_pdf_path,
-                    color_rgb=(0, 0, 1),
-                    add_white_bg=False,
-                )
-        except Exception:
-            pass
-    
         # 5) Converti i PDF prodotti in DOCX con Adobe API
         try:
             if preview_pdf_path.exists():
