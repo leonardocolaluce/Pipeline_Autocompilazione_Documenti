@@ -45,12 +45,7 @@ def main() -> int:
     if not client_id or not client_secret:
         raise SystemExit(f"Credenziali non valide nel JSON: manca client_id/client_secret in {creds_path}")
 
-    credentials = (
-        ServicePrincipalCredentials.builder()
-        .with_client_id(client_id)
-        .with_client_secret(client_secret)
-        .build()
-    )
+    credentials = ServicePrincipalCredentials(client_id=client_id, client_secret=client_secret)
     pdf_services = PDFServices(credentials=credentials)
 
     # Upload PDF
