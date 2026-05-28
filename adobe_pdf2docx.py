@@ -57,7 +57,8 @@ def main() -> int:
     export_params = ExportPDFParams(target_format=ExportPDFTargetFormat.DOCX)
     job = ExportPDFJob(input_asset=input_asset, export_pdf_params=export_params)
     location = pdf_services.submit(job)
-    response = pdf_services.get_job_result(location)
+    from adobe.pdfservices.operation.pdfjobs.result.export_pdf_result import ExportPDFResult
+    response = pdf_services.get_job_result(location, ExportPDFResult)
 
     # Download result
     result_asset = response.get_result().get_asset()
