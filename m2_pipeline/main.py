@@ -27,7 +27,7 @@ from backend.step15_docx_render_qc_mistral import qc_docx_render_first_page
 from backend.step11_adobe_pdf_to_docx import convert_pdf_to_docx_adobe
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
 INPUT_FOLDER = PROJECT_ROOT / "Millestone_1" / "Consegna_Milestone_1" / "output_di_esempio"
 INPUT_XML = PROJECT_ROOT / "Sample" / "extracted" / "Gara Comune di Matera" / "G01121_eDGUE-IT_request.xml"
 OUTPUT_FOLDER = PROJECT_ROOT / "Millestone_2" / "pipeline_2" / "output"
