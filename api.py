@@ -328,16 +328,21 @@ async def download(
 
     print(f"[DOWNLOAD] inferred_input_is_pdf={input_is_pdf}", flush=True)
 
-    # In modalità auto: PDF input -> PDF; Word input -> DOCX
-    effective_format = format
-    if format == "auto":
-        effective_format = "pdf" if input_is_pdf else "docx"
-    print(f"[DOWNLOAD] effective_format={effective_format}", flush=True)
-
     preview_pdf = output_dir / "documento_compilato_preview.pdf"
     final_pdf = output_dir / "documento_compilato_finale.pdf"
     preview_docx = output_dir / "documento_compilato_preview.docx"
     final_docx = output_dir / "documento_compilato_finale.docx"
+    
+    # In modalità auto: preferisci quello che ESISTE su disco (PDF prima, poi DOCX)
+    effective_format = format
+    if format == "auto":
+        if preview_pdf.exists() or final_pdf.exists():
+            effective_format = "pdf"
+        elif preview_docx.exists() or final_docx.exists():
+            effective_format = "docx"
+        else:
+            effective_format = "pdf" if input_is_pdf else "docx"
+    print(f"[DOWNLOAD] effective_format={effective_format}", flush=True)
 
     if effective_format == "pdf":
         # PDF branch (serve PDF only)
@@ -484,7 +489,7 @@ async def preview_pages(job_id: str):
     final_pdf   = output_dir / "documento_compilato_finale.pdf"
     pdf_path = preview_pdf if preview_pdf.exists() else final_pdf
 
-    if input_is_pdf and pdf_path.exists():
+    if pdf_path.exists():
         print(f"[PREVIEW] job_id={job_id} output_dir={output_dir}", flush=True)
         print(f"[PREVIEW] pdf_path={pdf_path} size={pdf_path.stat().st_size}", flush=True)
 
