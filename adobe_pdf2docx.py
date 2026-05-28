@@ -1,5 +1,6 @@
 import argparse
 import os
+import sys
 from pathlib import Path
 
 
@@ -13,6 +14,18 @@ def main() -> int:
     out_docx = Path(args.out_docx).resolve()
     out_docx.parent.mkdir(parents=True, exist_ok=True)
 
+    # Add vendored Adobe SDK "src" to sys.path (since it's not a pip-installable project).
+    sdk_src = (
+        Path(__file__).resolve().parent
+        / "vendor"
+        / "PDFServicesSDK-PythonSamples"
+        / "adobe-dc-pdf-services-sdk-python"
+        / "src"
+    )
+    if not sdk_src.exists():
+        raise SystemExit(f"SDK src non trovato: {sdk_src}")
+    sys.path.insert(0, str(sdk_src))
+
     creds_path = os.getenv("ADOBE_CREDENTIALS_JSON_PATH", "").strip()
     if not creds_path:
         raise SystemExit("ADOBE_CREDENTIALS_JSON_PATH non impostata (deve puntare a pdfservices-api-credentials.json).")
@@ -23,7 +36,7 @@ def main() -> int:
     if not input_pdf.exists() or input_pdf.suffix.lower() != ".pdf":
         raise SystemExit(f"PDF input non valido: {input_pdf}")
 
-    # Adobe PDF Services SDK (Python)
+    # Adobe PDF Services SDK (vendored)
     try:
         from adobe.pdfservices.operation.auth.service_principal_credentials import ServicePrincipalCredentials
         from adobe.pdfservices.operation.pdf_services import PDFServices
@@ -33,13 +46,9 @@ def main() -> int:
         from adobe.pdfservices.operation.pdfjobs.params.export_pdf.export_pdf_params import ExportPDFParams
         from adobe.pdfservices.operation.pdfjobs.params.export_pdf.export_pdf_target_format import ExportPDFTargetFormat
     except Exception as e:
-        raise SystemExit(
-            "SDK Adobe non trovato. Devi installare il pacchetto Python dell’SDK nella venv.\n"
-            "Esempio: pip install adobe-pdfservices-sdk\n"
-            f"Dettaglio import: {e}"
-        )
+        raise SystemExit(f"Import SDK Adobe fallito: {e}")
 
-    # Crea credenziali da file JSON
+    # Credentials from JSON file
     credentials = ServicePrincipalCredentials.from_file(creds_path)
     pdf_services = PDFServices(credentials=credentials)
 
@@ -54,7 +63,7 @@ def main() -> int:
     location = pdf_services.submit(job)
     response = pdf_services.get_job_result(location)
 
-    # Download risultato
+    # Download result
     result_asset = response.get_result().get_asset()
     stream_asset: StreamAsset = pdf_services.get_content(result_asset)
 
