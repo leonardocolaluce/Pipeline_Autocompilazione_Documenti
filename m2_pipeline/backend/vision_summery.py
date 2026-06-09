@@ -257,6 +257,7 @@ def _coerce_match_output(matches_obj: dict[str, Any], data_json: Any) -> dict[st
             {
                 "field_id": item.get("field_id"),
                 "label": item.get("label"),
+                "field_type": item.get("field_type"),
                 "value": value if keep else None,
                 "source_path": source_path if keep else None,
                 "confidence": item.get("confidence", 0.0),
@@ -371,6 +372,9 @@ def run_vision_mapping(
                                         "- field_id: string (es. \"f1\", \"f2\"...)\n"
                                         "- label: testo del campo (es. \"Il/La sottoscritto/a\", \"nato/a a\", \"codice fiscale\")\n"
                                         "- field_type: uno tra [\"text\", \"date\", \"checkbox\"]\n"
+                                        "- Per checkbox/caselle: restituisci nel MATCH solo quelle da spuntare.\n"
+                                        "- Se una checkbox va spuntata, usa field_type=\"checkbox\", value=true e source_path reale dal JSON.\n"
+                                        "- Se una checkbox NON va spuntata, non inserirla nei matches oppure usa value=null.\n"
                                         "\n"
                                         "REGOLE DI ESTRAZIONE CAMPI (IMPORTANTI):\n"
                                         "- Ogni SPAZIO DA COMPILARE è un campo distinto (linee vuote, underscore, puntini, spazi in tabelle, caselle/checkbox).\n"
@@ -392,6 +396,7 @@ def run_vision_mapping(
                                         "    {\n"
                                         "      \"field_id\": \"f1\",\n"
                                         "      \"label\": \"...\",\n"
+                                        "      \"field_type\": \"text\" | \"date\" | \"checkbox\",\n"
                                         "      \"value\": \"...\" | null | true | false,\n"
                                         "      \"source_path\": \"...\" | null,\n"
                                         "      \"confidence\": 0.0\n"
