@@ -482,6 +482,18 @@ def extract_checkboxes_from_pdf(
     result = analyze_pdf(pdf_path, original, out_dir, [], raster_mode)
     return [_record_to_m1_checkbox(record) for record in result.get("checkboxes") or []]
 
+def extract_checkboxes(blocks: list[dict]) -> list[dict]:
+    return []
+
+
+def extract_checkboxes_from_docx(docx_path: str | Path) -> list[dict]:
+    converted_dir = Path(tempfile.mkdtemp(prefix="checkbox_docx_"))
+    try:
+        pdf_path = convert_word_to_pdf(Path(docx_path), converted_dir)
+        return extract_checkboxes_from_pdf(pdf_path, docx_path, converted_dir, "off")
+    finally:
+        shutil.rmtree(converted_dir, ignore_errors=True)
+
 def draw_annotations(document: fitz.Document, records: list[dict]) -> None:
     for record in records:
         page = document[record["page"] - 1]
