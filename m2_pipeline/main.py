@@ -25,6 +25,7 @@ from backend.step10_merge_tables_into_mapping import merge_tables_filled_into_ma
 from backend.step14_regex_validator import clean_mapping_with_regex_rules
 from backend.step15_docx_render_qc_mistral import qc_docx_render_first_page
 from backend.step11_adobe_pdf_to_docx import convert_pdf_to_docx_adobe
+from backend.step16_checkbox_table_guard import clear_tables_linked_to_unchecked_checkboxes
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -345,6 +346,12 @@ def run_all(
             )
     except Exception:
         pass
+
+    try:
+        if pre_validator_mapping.exists():
+            clear_tables_linked_to_unchecked_checkboxes(pre_validator_mapping)
+    except Exception as exc:
+        print(f"[checkbox-table-guard] skipped err={type(exc).__name__}: {exc}", flush=True)
 
     source_doc = resolve_source_document(bundle_name)
     pdf_mode = bool(source_doc is not None and source_doc.suffix.lower() == ".pdf")
