@@ -18,7 +18,10 @@ def _page(row: dict[str, Any]) -> int:
 
 
 def _bbox(row: dict[str, Any]) -> list[float] | None:
-    value = row.get("bbox") or row.get("marker_bbox") or row.get("checkbox_bbox")
+    if str(row.get("item_type") or "") == "checkbox":
+        value = row.get("marker_bbox") or row.get("checkbox_bbox") or row.get("bbox")
+    else:
+        value = row.get("bbox") or row.get("marker_bbox") or row.get("checkbox_bbox")
     if not isinstance(value, (list, tuple)) or len(value) != 4:
         return None
     try:
@@ -122,6 +125,20 @@ def write_pdf_from_answers_json(
 
         page = doc.load_page(page_no - 1)
         rect = fitz.Rect(bbox[0], bbox[1], bbox[2], bbox[3])
+        if str(row.get("item_type") or "") == "checkbox":
+            rc = page.insert_textbox(
+                rect,
+                "X",
+                fontsize=10,
+                fontname="helv",
+                color=(0, 0, 0),
+                align=1,
+                overlay=True,
+            )
+            if rc < 0:
+                overflow += 1
+            written += 1
+            continue
 
         # Many "field" bboxes coming from line markers are extremely thin (≈1pt height),
         # which makes insert_textbox fail. Expand to a reasonable rectangle while keeping
