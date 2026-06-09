@@ -295,6 +295,13 @@ def _candidate_score(
     if vision_page is not None and row_page is not None and vision_page != row_page:
         return 0.0
 
+    match_type = str(match.get("field_type") or "").strip()
+    row_type = str(row.get("item_type") or "").strip()
+    if match_type == "checkbox" and row_type != "checkbox":
+        return 0.0
+    if match_type != "checkbox" and row_type == "checkbox":
+        return 0.0
+
     label = str(match.get("label") or "")
     row_label = str(row.get("label") or "")
     score = max(_label_score(label, row_label), _source_hint_score(match, row))
@@ -365,6 +372,7 @@ def merge_vision_matches_into_mapping(
     matches = [item for item in (vision_payload.get("matches") or []) if isinstance(item, dict)]
 
     filled = 0
+    checkbox_positive_written = 0
     used_indexes: set[int] = set()
     last_index_for_page: Dict[int, int] = {}
 
@@ -378,6 +386,12 @@ def merge_vision_matches_into_mapping(
             continue
 
         row = rows[index]
+        if str(row.get("item_type") or "") == "checkbox":
+            if answer.lower() not in {"true", "x", "si", "sì", "yes", "1"}:
+                continue
+            answer = "X"
+            checkbox_positive_written += 1
+
         source_path = str(match.get("source_path") or "").strip()
         confidence = float(match.get("confidence", 0.0) or 0.0)
         image_page = str(match.get("image_page") or "").strip()
@@ -395,7 +409,9 @@ def merge_vision_matches_into_mapping(
             last_index_for_page[row_page] = index
         filled += 1
 
+    print(f"\n========== CHECKBOX POSITIVI SCRITTI: {checkbox_positive_written} ==========\n", flush=True)
     mapping_file.write_text(json.dumps(mapping_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    
     return {
         "mapping_path": str(mapping_file),
         "filled_count": filled,
