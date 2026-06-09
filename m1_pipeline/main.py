@@ -13,12 +13,11 @@ from preprocessing.image_processor import preprocess_image
 from postprocessing.block_parser import parse_blocks
 import subprocess
 from postprocessing import extract_pdf_fields 
-from postprocessing.checkbox_extractor import extract_checkboxes, extract_checkboxes_from_docx
 from postprocessing.table_extractor import extract_tables
 from postprocessing.annotation_renderer import render_annotations_from_m1
 from postprocessing.pdf_table_layout import enrich_tables_with_pdf_layout
 from ocr.ocr_engine import run_ocr
-
+from postprocessing.checkbox_extractor import extract_checkboxes, extract_checkboxes_from_docx, extract_checkboxes_from_pdf
 
 # ==============================================================================
 #  CONFIGURAZIONE DIRETTA 
@@ -249,11 +248,16 @@ def process(
             json.dump({"base_name": stem, "item_count": len(slim_rows), "rows": slim_rows}, f, ensure_ascii=False, indent=2)
         print(f"[INFO] Campi slim salvati in: {fields_slim_path}")
 
-    # --- Estrazione checkbox (solo per file Word) ---
-    if file_type == "word":
+    # --- Estrazione checkbox ---
+    if render_pdf_path:
+        checkboxes = extract_checkboxes_from_pdf(render_pdf_path, file_path, output_dir, "off")
+    elif file_type == "word":
         checkboxes = extract_checkboxes(blocks)
         if not checkboxes:
             checkboxes = extract_checkboxes_from_docx(docx_path)
+
+    if file_type in ("word", "pdf_native", "pdf_scanned"):
+        print(f"\n========== CHECKBOX TROVATI: {len(checkboxes)} ==========\n", flush=True)
         if checkboxes:
             checkbox_path = str(output_dir / f"{stem}_CHECKBOX.json")
             with open(checkbox_path, "w", encoding="utf-8") as f:
