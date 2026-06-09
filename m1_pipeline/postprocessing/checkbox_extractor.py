@@ -1,6 +1,8 @@
 import re
+from pathlib import Path
 from typing import Any, Dict, List
 
+import fitz
 from docx import Document
 
 
@@ -192,3 +194,47 @@ def _marker_bbox_from_block_bbox(bbox, text: str):
         return None
     size = max(6.0, min(h, 14.0))
     return [round(x, 2), round(y, 2), round(size, 2), round(h, 2)]
+
+def extract_checkboxes_from_pdf(pdf_path, original_path=None, output_dir=None, raster_mode="off") -> List[Dict[str, Any]]:
+    doc = fitz.open(str(pdf_path))
+    items: List[Dict[str, Any]] = []
+
+    for page in doc:
+        for drawing in page.get_drawings():
+            rect = drawing.get("rect")
+            if not rect:
+                continue
+
+            w = float(rect.width)
+            h = float(rect.height)
+            if w < 4 or h < 4 or w > 24 or h > 24:
+                continue
+            if abs(w - h) / max(w, h) > 0.38:
+                continue
+
+            text_right = ""
+            words = []
+            cy = (rect.y0 + rect.y1) / 2.0
+            for raw_word in page.get_text("words"):
+                word_rect = fitz.Rect(raw_word[:4])
+                word_cy = (word_rect.y0 + word_rect.y1) / 2.0
+                if abs(word_cy - cy) <= max(5.0, h * 0.85) and word_rect.x0 > rect.x1:
+                    words.append((word_rect.x0, raw_word[4]))
+            words.sort(key=lambda x: x[0])
+            text_right = " ".join(word for _, word in words).strip()
+
+            bbox = [round(rect.x0, 2), round(rect.y0, 2), round(rect.x1, 2), round(rect.y1, 2)]
+            items.append(
+                {
+                    "label": text_right,
+                    "text": text_right,
+                    "lines": [text_right] if text_right else [],
+                    "page": page.number + 1,
+                    "bbox": bbox,
+                    "marker_bbox": bbox,
+                    "checkbox_bbox": bbox,
+                }
+            )
+
+    doc.close()
+    return items
