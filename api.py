@@ -20,6 +20,8 @@ app = FastAPI(title="Pipeline Autocompilazione")
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 LAST_JOB_PATH = PROJECT_ROOT / "output" / "last_job.json"
+ARCHIVE_DIR = PROJECT_ROOT / "documenti_compilati"
+ARCHIVE_INDEX = ARCHIVE_DIR / "index.json"
 
 # === Job State Management ===
 jobs: Dict[str, Dict[str, Any]] = {}
@@ -69,6 +71,32 @@ def _count_fields_and_tables(mapping_path: Path) -> tuple[int, int]:
             filled += 1
 
     return total, filled
+
+def archive_preview(job_id: str, doc_path: str, data_json_path: str, m2_out: Path):
+    preview = m2_out / "documento_compilato_preview.pdf"
+    if not preview.exists():
+        preview = m2_out / "documento_compilato_preview.docx"
+    if not preview.exists():
+        return None
+
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    safe_name = _safe_download_stem({"doc_name": Path(doc_path).name})
+    archived = ARCHIVE_DIR / f"{safe_name}_{job_id}{preview.suffix}"
+    shutil.copy2(preview, archived)
+
+    index = []
+    if ARCHIVE_INDEX.exists():
+        index = json.loads(ARCHIVE_INDEX.read_text(encoding="utf-8"))
+
+    item = {
+        "job_id": job_id,
+        "input_file": Path(doc_path).name,
+        "path": str(archived),
+        "format": preview.suffix.lstrip("."),
+    }
+    index.append(item)
+    ARCHIVE_INDEX.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
+    return item
 
 def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
     """Esegue la pipeline in background."""
@@ -160,9 +188,12 @@ def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
         else:
             print("[FIELDS] mapping non trovato (nessun conteggio campi)", flush=True)
 
+        archived = archive_preview(job_id, doc_path, data_json_path, m2_out)
+
         jobs[job_id]["progress"] = "M2 completato. Finalizzazione..."
         jobs[job_id]["status"] = "completed"
         jobs[job_id]["output_dir"] = str(m2_out)
+        jobs[job_id]["archived_preview"] = archived
 
         final_msg = "Pipeline completata con successo"
         if fields_msg:
@@ -577,7 +608,32 @@ async def preview_pages(job_id: str):
             print("[PREVIEW] Graph KO -> preview disabilitata (no fallback). Usa /download.", flush=True)
             return {"pages": [], "total": 0, "reason": "graph_failed"}
 
+@app.get("/compiled-documents")
+async def compiled_documents(filename: str | None = None):
+    if not ARCHIVE_INDEX.exists():
+        return {"documents": []}
 
+    docs = json.loads(ARCHIVE_INDEX.read_text(encoding="utf-8"))
+    if filename:
+        docs = [d for d in docs if filename.lower() in d.get("input_file", "").lower()]
+    return {"documents": docs}
+
+
+@app.get("/compiled-documents/{job_id}/download")
+async def download_compiled_document(job_id: str):
+    if not ARCHIVE_INDEX.exists():
+        raise HTTPException(status_code=404, detail="Archivio vuoto")
+
+    docs = json.loads(ARCHIVE_INDEX.read_text(encoding="utf-8"))
+    item = next((d for d in docs if d.get("job_id") == job_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Documento non trovato")
+
+    path = Path(item["path"])
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="File archiviato non trovato")
+
+    return FileResponse(path=path, filename=path.name)
 
 @app.get("/health")
 async def health():
