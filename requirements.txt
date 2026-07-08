@@ -19,3 +19,4 @@ msal
 requests
 pymupdf
 pywin32==312
+pdfservices-sdk
