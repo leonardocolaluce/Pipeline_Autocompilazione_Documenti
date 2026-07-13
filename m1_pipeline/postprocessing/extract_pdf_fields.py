@@ -1,17 +1,19 @@
+import argparse
 import json
 import os
 import re
 from typing import Any, Dict, List, Tuple
 
-# potenziare ricerca campi da compilare (deve trovarli tutti)
-# trovare contesto anche di campi con riga di riferimento sopra
+_default_pdf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "input.pdf")
+_default_out_json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "campi_pdf.json")
 
+parser = argparse.ArgumentParser()
+parser.add_argument("--input-pdf", default=_default_pdf_path)
+parser.add_argument("--out-json", default=_default_out_json_path)
+args = parser.parse_args()
 
-# PDF creato dallo script di conversione: stesso folder di questo .py
-pdf_path = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "input.pdf",
-)
+pdf_path = args.input_pdf
+out_json_path = args.out_json
 
 
 BLANK_RE = re.compile(r"^[_]{3,}$|^[.]{3,}$|^[-]{3,}$|^([_ .-])\1{4,}$")
@@ -941,8 +943,6 @@ def main() -> None:
 
     if not os.path.exists(pdf_path):
         raise SystemExit(f"PDF non trovato: {pdf_path}")
-
-    out_json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "campi_pdf.json")
 
     doc = fitz.open(pdf_path)
     all_fields: List[Dict[str, Any]] = []
