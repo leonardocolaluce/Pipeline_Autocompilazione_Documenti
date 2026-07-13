@@ -447,8 +447,6 @@ def run_all(
         pass
     
     try:
-        # Scrivi il FINAL PDF qui SOLO se l'input era davvero PDF.
-        # Se input è Word, il FINAL PDF è già stato scritto sopra usando source_pdf_tmp.
         mapping_src = Path(output_dir) / FIELD_MAPPING_FILENAME
         if pdf_mode and source_pdf is not None and mapping_src.exists():
             write_pdf_from_answers_json(
@@ -460,6 +458,19 @@ def run_all(
             )
     except Exception:
         pass
+
+    if pdf_mode:
+        try:
+            if preview_pdf_path.exists():
+                convert_pdf_to_docx_adobe(preview_pdf_path, preview_path)
+        except Exception as exc:
+            print(f"[ADOBE] pdf preview pdf->docx skipped err={type(exc).__name__}: {exc}", flush=True)
+
+        try:
+            if compiled_pdf_path.exists():
+                convert_pdf_to_docx_adobe(compiled_pdf_path, Path(output_dir) / FINAL_DOCX_FILENAME)
+        except Exception as exc:
+            print(f"[ADOBE] pdf final pdf->docx skipped err={type(exc).__name__}: {exc}", flush=True)
     
     provisional_excel_path = Path(output_dir) / EXCEL_PROVISIONAL_FILENAME
 
@@ -484,8 +495,8 @@ def run_all(
         "mapping_output_provvisorio_excel": str(provisional_excel_path) if provisional_excel_path.exists() else None,
         "mapping_output_finale": str(post_validator_mapping) if post_validator_mapping.exists() else None,
         "summary_output": str(Path(output_dir) / SUMMARY_FILENAME),
-        "compiled_output": (write_res["compiled_output"] if not pdf_mode else None),
-        "compiled_output_preview": (str(preview_path) if (not pdf_mode and preview_path.exists()) else None),
+        "compiled_output": str(Path(output_dir) / FINAL_DOCX_FILENAME) if (Path(output_dir) / FINAL_DOCX_FILENAME).exists() else (write_res["compiled_output"] if not pdf_mode else None),
+        "compiled_output_preview": str(preview_path) if preview_path.exists() else None,
         "compiled_output_preview_pdf": str(preview_pdf_path) if preview_pdf_path.exists() else None,
         "compiled_output_pdf": str(compiled_pdf_path) if compiled_pdf_path.exists() else None,
         "validator_removed_count": int(validate_res.get("removed_count", 0) or 0),
