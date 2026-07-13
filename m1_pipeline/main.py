@@ -114,19 +114,8 @@ def process(
             docx_path = convert_doc_to_docx(file_path)
             tmp_dir = str(Path(docx_path).parent)
             print(f"[INFO] Conversione completata: {docx_path}")
-        try:
-            post_dir = Path(__file__).resolve().parent / "postprocessing"
-            pdf_fixed_path = post_dir / "input.pdf"
-            script_convert = post_dir / "convert_docx_to_pdf.py"
-            subprocess.run(
-                [sys.executable, str(script_convert), "--input-docx", str(Path(docx_path).resolve()), "--out-pdf", str(pdf_fixed_path)],
-                check=True,
-            )
-            render_pdf_path = str(pdf_fixed_path)
-            render_cleanup_dir = None
-            print(f"[INFO] PDF di appoggio per annotazioni: {render_pdf_path}")
-        except Exception:
-            render_pdf_path = None
+            
+        render_pdf_path = None
 
         raw = load_word(docx_path)
         print(f"[INFO] Estratti {len(raw)} blocchi grezzi dal file Word.")
@@ -147,10 +136,18 @@ def process(
     script_extract = post_dir / "extract_pdf_fields.py"
     script_preview = post_dir / "render_boxes_preview.py"
 
-    pdf_fixed_path = post_dir / "input.pdf"
-    campi_pdf_path = post_dir / "campi_pdf.json"
-    pdf_fixed_path.unlink(missing_ok=True)
-    campi_pdf_path.unlink(missing_ok=True)
+    if output_dir:
+        output_dir = Path(output_dir)
+    elif output_path:
+        output_dir = Path(output_path).resolve().parent
+    else:
+        output_dir = Path(__file__).parent.parent / "output"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    work_dir = output_dir / "_m1_work"
+    work_dir.mkdir(parents=True, exist_ok=True)
+    pdf_fixed_path = work_dir / "input.pdf"
+    campi_pdf_path = work_dir / "campi_pdf.json"
 
 
     # 1) prepara input.pdf
@@ -167,7 +164,10 @@ def process(
         shutil.copy2(src_pdf, pdf_fixed_path)
 
     # 2) estrai campi su campi_pdf.json
-    _subprocess.run([sys.executable, str(script_extract)], check=True)
+    _subprocess.run(
+        [sys.executable, str(script_extract), "--input-pdf", str(pdf_fixed_path), "--out-json", str(campi_pdf_path)],
+        check=True,
+    )
 
     # 3) converti campi_pdf.json nel formato fields atteso dal resto della pipeline (e da M2)
     if campi_pdf_path.exists():
@@ -289,7 +289,16 @@ def process(
             script_preview = post_dir / "render_boxes_preview.py"
             annot_dir = str(output_dir / f"{stem}_ANNOTAZIONI")
 
-            preview_cmd = [sys.executable, str(script_preview), "--out-dir", annot_dir]
+            preview_cmd = [
+                sys.executable,
+                str(script_preview),
+                "--input-pdf",
+                str(pdf_fixed_path),
+                "--fields-json",
+                str(campi_pdf_path),
+                "--out-dir",
+                annot_dir,
+            ]
             if tables_path and Path(tables_path).exists():
                 preview_cmd.extend(["--tables-json", tables_path])
 
