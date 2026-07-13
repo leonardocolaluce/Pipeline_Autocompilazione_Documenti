@@ -269,7 +269,7 @@ def process(
     # --- Estrazione tabelle (Word + PDF nativo) ---
     tables_path = None
     if file_type in ("word", "pdf_native"):
-        tables_input = docx_path if file_type == "word" else file_path
+        tables_input = render_pdf_path if render_pdf_path else file_path
         tables = extract_tables(tables_input, blocks)
         if tables and render_pdf_path:
             enrich_tables_with_pdf_layout(render_pdf_path, tables)
