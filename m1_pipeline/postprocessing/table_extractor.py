@@ -926,7 +926,7 @@ def extract_tables(file_path: str, blocks: list[dict[str, object]] | None = None
     """Compat per m1_pipeline/main.py: ritorna tabelle in formato M1 (bbox xywh + testo celle)."""
     del blocks
     pdf_path = _resolve_pdf_path(file_path)
-    tmp_out = Path(__file__).resolve().parent / "_tmp_table_detect"
+    tmp_out = pdf_path.parent / "_tmp_table_detect"
     tmp_out.mkdir(parents=True, exist_ok=True)
 
     # Usa la tua logica esistente (_process_pdf) senza modificarla.
