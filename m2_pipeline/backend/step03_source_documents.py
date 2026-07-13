@@ -1,6 +1,7 @@
 import re
 import zipfile
 import os
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Optional
 from functools import lru_cache
@@ -9,8 +10,34 @@ from .step00_config import PROJECT_ROOT
 
 SAMPLE_EXTRACTED_ROOT = PROJECT_ROOT / "Sample" / "extracted"
 
+_SOURCE_CONTEXT: ContextVar[dict] = ContextVar("SOURCE_CONTEXT", default={})
+
+
+def set_source_context(
+    *,
+    extra_docx_dirs: list[Path] | None = None,
+    force_source_docx: Path | None = None,
+    force_source_pdf: Path | None = None,
+) -> None:
+    _SOURCE_CONTEXT.set(
+        {
+            "extra_docx_dirs": [Path(p) for p in (extra_docx_dirs or [])],
+            "force_source_docx": Path(force_source_docx) if force_source_docx else None,
+            "force_source_pdf": Path(force_source_pdf) if force_source_pdf else None,
+        }
+    )
+
+
+def clear_source_context() -> None:
+    _SOURCE_CONTEXT.set({})
+
 
 def _extra_roots() -> list[Path]:
+    ctx = _SOURCE_CONTEXT.get()
+    ctx_roots = ctx.get("extra_docx_dirs") or []
+    if ctx_roots:
+        return [Path(p) for p in ctx_roots]
+
     raw = os.getenv("M2_EXTRA_DOCX_DIRS", "")
     if not raw.strip():
         return []
@@ -53,6 +80,14 @@ def _source_candidates() -> tuple[Path, ...]:
 
 
 def resolve_source_document(base_name: str) -> Optional[Path]:
+    ctx = _SOURCE_CONTEXT.get()
+    forced_ctx = ctx.get("force_source_pdf") or ctx.get("force_source_docx")
+    if forced_ctx:
+        p = Path(forced_ctx)
+        print(f"[SOURCE] resolve_source_document CONTEXT={p} exists={p.exists()}", flush=True)
+        if p.exists():
+            return p
+
     forced = os.getenv("M2_FORCE_SOURCE_DOCX", "").strip()
     if forced:
         p = Path(forced)
@@ -75,6 +110,14 @@ def resolve_source_document(base_name: str) -> Optional[Path]:
 
 
 def resolve_source_docx(base_name: str) -> Optional[Path]:
+    ctx = _SOURCE_CONTEXT.get()
+    forced_ctx = ctx.get("force_source_docx")
+    if forced_ctx:
+        p = Path(forced_ctx)
+        print(f"[SOURCE] resolve_source_docx CONTEXT={p} exists={p.exists()}", flush=True)
+        if p.exists() and p.suffix.lower() == ".docx":
+            return p
+
     override = os.getenv("M2_SOURCE_DOCX_OVERRIDE", "").strip()
     if override:
         p = Path(override)
@@ -107,6 +150,14 @@ def resolve_source_docx(base_name: str) -> Optional[Path]:
 
 
 def resolve_source_pdf(base_name: str) -> Optional[Path]:
+    ctx = _SOURCE_CONTEXT.get()
+    forced_ctx = ctx.get("force_source_pdf")
+    if forced_ctx:
+        p = Path(forced_ctx)
+        print(f"[SOURCE] resolve_source_pdf CONTEXT={p} exists={p.exists()}", flush=True)
+        if p.exists() and p.suffix.lower() == ".pdf":
+            return p
+
     forced = os.getenv("M2_FORCE_SOURCE_PDF", "").strip()
     if forced:
         p = Path(forced)
