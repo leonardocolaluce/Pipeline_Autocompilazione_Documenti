@@ -81,7 +81,7 @@ def _source_candidates() -> tuple[Path, ...]:
 
 def resolve_source_document(base_name: str) -> Optional[Path]:
     ctx = _SOURCE_CONTEXT.get()
-    forced_ctx = ctx.get("force_source_pdf") or ctx.get("force_source_docx")
+    forced_ctx = ctx.get("force_source_docx") or ctx.get("force_source_pdf")
     if forced_ctx:
         p = Path(forced_ctx)
         print(f"[SOURCE] resolve_source_document CONTEXT={p} exists={p.exists()}", flush=True)
