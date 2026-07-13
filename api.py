@@ -135,7 +135,7 @@ def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
 
         source_pdf = None
         if src.suffix.lower() in {".doc", ".docx"}:
-            generated_pdf = PROJECT_ROOT / "m1_pipeline" / "postprocessing" / "input.pdf"
+            generated_pdf = m1_out / "_m1_work" / "input.pdf"
             if generated_pdf.exists():
                 source_pdf = m1_out / f"{src.stem}_source.pdf"
                 shutil.copy2(generated_pdf, source_pdf)
@@ -148,22 +148,26 @@ def run_pipeline_task(job_id: str, doc_path: str, data_json_path: str):
         # --- M2 ---
         jobs[job_id]["progress"] = "M2: Mappatura campi..."
         sys.path.insert(0, str(PROJECT_ROOT / "m2_pipeline"))
-        os.environ["M2_EXTRA_DOCX_DIRS"] = str(m1_out)
-        os.environ["M2_FORCE_SOURCE_DOCX"] = str(docx_source)
-        if source_pdf is not None and source_pdf.exists():
-            os.environ["M2_FORCE_SOURCE_PDF"] = str(source_pdf)
         print(f"[SOURCE] Forzo DOCX sorgente M2: {docx_source}", flush=True)
 
         m2_main = _load_module("m2_main", M2_PATH)
-        os.environ["M2_CLASSIFY_INPUT_DOC"] = str(doc_path)
-        
-        m2_result = m2_main.run_all(
-            m1_dir=str(m1_out),
-            output_dir=str(m2_out),
-            data_json=data_json_path,
-            bundle_name=None,
-            venv_python=sys.executable,
+        from backend.step03_source_documents import set_source_context, clear_source_context
+
+        set_source_context(
+            extra_docx_dirs=[m1_out],
+            force_source_docx=docx_source,
+            force_source_pdf=source_pdf,
         )
+        try:
+            m2_result = m2_main.run_all(
+                m1_dir=str(m1_out),
+                output_dir=str(m2_out),
+                data_json=data_json_path,
+                bundle_name=None,
+                venv_python=sys.executable,
+            )
+        finally:
+            clear_source_context()
 
         if isinstance(m2_result, dict) and m2_result.get("status") == "skipped":
             jobs[job_id]["status"] = "completed"
@@ -219,13 +223,7 @@ async def upload(file: UploadFile = File(...), data_json: UploadFile = File(...)
         {"job_id": "uuid", "status": "queued"}
     """
     job_id = str(uuid.uuid4())
-    cancel_previous_jobs()
 
-    old_tmp = PROJECT_ROOT / "tmp"
-    print(f"[CLEANUP] Cancello tmp precedente: {old_tmp} exists={old_tmp.exists()}", flush=True)
-    shutil.rmtree(old_tmp, ignore_errors=True)
-    print(f"[CLEANUP] Tmp cancellato: exists={old_tmp.exists()}", flush=True)
-    
     # Salva file temporanei
     tmp_dir = PROJECT_ROOT / "tmp" / job_id
     print(f"[UPLOAD] Nuova tmp_dir: {tmp_dir}", flush=True)
