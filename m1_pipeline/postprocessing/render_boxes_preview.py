@@ -3,13 +3,14 @@ import os
 from collections import defaultdict
 from typing import Any, Dict, List, Tuple
 
-
 import argparse
 
-pdf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "input.pdf")
-json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "campi_pdf.json")
+_default_pdf_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "input.pdf")
+_default_json_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "campi_pdf.json")
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--input-pdf", default=_default_pdf_path)
+parser.add_argument("--fields-json", default=_default_json_path)
 parser.add_argument("--out-dir", required=True)
 parser.add_argument(
     "--tables-json",
@@ -17,6 +18,8 @@ parser.add_argument(
     help="Path JSON tabelle (se fornito, disegna le tabelle in verde sulle stesse immagini).",
 )
 args = parser.parse_args()
+pdf_path = args.input_pdf
+json_path = args.fields_json
 out_dir = args.out_dir
 tables_json_path = args.tables_json
 
