@@ -15,6 +15,7 @@ import tempfile
 import base64
 import fitz 
 import re
+import time
 
 app = FastAPI(title="Pipeline Autocompilazione")
 
@@ -632,6 +633,46 @@ async def download_compiled_document(job_id: str):
         raise HTTPException(status_code=404, detail="File archiviato non trovato")
 
     return FileResponse(path=path, filename=path.name)
+
+@app.put("/compiled-documents/{job_id}/replace")
+async def replace_compiled_document(job_id: str, file: UploadFile = File(...)):
+    if not ARCHIVE_INDEX.exists():
+        raise HTTPException(status_code=404, detail="Archivio vuoto")
+
+    docs = json.loads(ARCHIVE_INDEX.read_text(encoding="utf-8"))
+    item = next((d for d in docs if d.get("job_id") == job_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail="Documento non trovato")
+
+    old_path = Path(item["path"])
+    if not old_path.exists():
+        raise HTTPException(status_code=404, detail="File archiviato non trovato")
+
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".docx", ".pdf"}:
+        raise HTTPException(status_code=400, detail="Formato non supportato. Usa DOCX o PDF")
+
+    new_path = old_path.with_suffix(suffix)
+
+    with open(new_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    if new_path != old_path and old_path.exists():
+        old_path.unlink()
+
+    item["path"] = str(new_path)
+    item["format"] = suffix.lstrip(".")
+    item["modified_filename"] = file.filename
+    item["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+
+    ARCHIVE_INDEX.write_text(json.dumps(docs, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return {
+        "status": "ok",
+        "job_id": job_id,
+        "path": str(new_path),
+        "format": item["format"],
+    }
 
 @app.get("/health")
 async def health():
