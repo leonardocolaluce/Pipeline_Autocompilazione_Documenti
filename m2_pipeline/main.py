@@ -37,6 +37,16 @@ DEFAULT_VENV_PYTHON = Path(sys.executable)
 DEFAULT_DATA_JSON = PROJECT_ROOT / "Millestone_2" / "anagrafica_NIKANTE.json"
 
 
+def timed_call(label, function, *args, **kwargs):
+    started_at = time.perf_counter()
+    print(f"[TIMING] {label} START", flush=True)
+    try:
+        return function(*args, **kwargs)
+    finally:
+        elapsed = time.perf_counter() - started_at
+        print(f"[TIMING] {label} END seconds={elapsed:.2f}", flush=True)
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Pipeline 2 rebuilt incrementally.")
     parser.add_argument(
@@ -292,6 +302,9 @@ def run_all(
     venv_python: str = str(DEFAULT_VENV_PYTHON),
     data_json: str | None = None,
 ) -> dict:
+    m2_total_started_at = time.perf_counter()
+    print("[TIMING] M2_TOTAL START", flush=True)
+
     if data_json:
         xml_input = data_json
     if not bundle_name:
@@ -301,10 +314,31 @@ def run_all(
     if not bundle_name:
         raise ValueError("Nessun bundle compilabile trovato.")
 
-    classify_res = run_classify_documents(m1_dir, output_dir)
-    xml_res = run_convert_xml(output_dir, xml_input)
-    map_res = run_map_fields(m1_dir, output_dir, xml_input, bundle_name)
+    classify_res = timed_call(
+        "classify_documents",
+        run_classify_documents,
+        m1_dir,
+        output_dir,
+    )
+    xml_res = timed_call(
+        "convert_xml_or_json",
+        run_convert_xml,
+        output_dir,
+        xml_input,
+    )
+    map_res = timed_call(
+        "mistral_fields_and_tables",
+        run_map_fields,
+        m1_dir,
+        output_dir,
+        xml_input,
+        bundle_name,
+    )
     if map_res.get("status") != "ok":
+        print(
+            f"[TIMING] M2_TOTAL END seconds={time.perf_counter() - m2_total_started_at:.2f}",
+            flush=True,
+        )
         return {
             "status": "skipped",
             "step": "run_all",
@@ -329,7 +363,9 @@ def run_all(
     try:
         tables_filled = Path(output_dir) / "tables_filled_output.json"
         if tables_filled.exists() and pre_validator_mapping.exists():
-            merge_tables_filled_into_mapping(
+            timed_call(
+                "merge_tables_into_mapping",
+                merge_tables_filled_into_mapping,
                 tables_filled_json_path=tables_filled,
                 mapping_json_path=pre_validator_mapping,
                 only_if_empty=True,
@@ -340,7 +376,9 @@ def run_all(
     # Regex validator: pulisce il mapping provvisorio COMPLETO (campi + tabelle) prima del preview.
     try:
         if pre_validator_mapping.exists():
-            clean_mapping_with_regex_rules(
+            timed_call(
+                "regex_validator",
+                clean_mapping_with_regex_rules,
                 mapping_json_path=pre_validator_mapping,
                 data_json_path=xml_res["json_output"],
             )
@@ -349,7 +387,11 @@ def run_all(
 
     try:
         if pre_validator_mapping.exists():
-            clear_tables_linked_to_unchecked_checkboxes(pre_validator_mapping)
+            timed_call(
+                "checkbox_table_guard",
+                clear_tables_linked_to_unchecked_checkboxes,
+                pre_validator_mapping,
+            )
     except Exception as exc:
         print(f"[checkbox-table-guard] skipped err={type(exc).__name__}: {exc}", flush=True)
 
@@ -366,7 +408,9 @@ def run_all(
     if pdf_mode:
         try:
             if source_doc is not None and pre_validator_mapping.exists():
-                write_pdf_from_answers_json(
+                timed_call(
+                    "write_preview_pdf_from_pdf",
+                    write_pdf_from_answers_json,
                     source_doc,
                     pre_validator_mapping,
                     preview_pdf_path,
@@ -377,7 +421,12 @@ def run_all(
             pass
     
         try:
-            validate_res = validate_and_prune(Path(output_dir), Path(output_dir) / "__compiled_docx_not_available__.docx")
+            validate_res = timed_call(
+                "final_validator",
+                validate_and_prune,
+                Path(output_dir),
+                Path(output_dir) / "__compiled_docx_not_available__.docx",
+            )
         except Exception:
             validate_res = {"removed_count": 0}
     else:
@@ -395,8 +444,17 @@ def run_all(
         convert_script = PROJECT_ROOT / "m1_pipeline" / "postprocessing" / "convert_docx_to_pdf.py"
         try:
             import subprocess
-            subprocess.run(
-                [sys.executable, str(convert_script), "--input-docx", str(source_docx), "--out-pdf", str(source_pdf_tmp)],
+            timed_call(
+                "docx_to_source_pdf",
+                subprocess.run,
+                [
+                    sys.executable,
+                    str(convert_script),
+                    "--input-docx",
+                    str(source_docx),
+                    "--out-pdf",
+                    str(source_pdf_tmp),
+                ],
                 check=True,
                 timeout=180,
                 capture_output=True,
@@ -411,7 +469,9 @@ def run_all(
         # 3) Scrivi PREVIEW PDF (da mapping provvisorio)
         try:
             if pre_validator_mapping.exists():
-                write_pdf_from_answers_json(
+                timed_call(
+                    "write_preview_pdf_from_word",
+                    write_pdf_from_answers_json,
                     source_pdf_tmp,
                     pre_validator_mapping,
                     preview_pdf_path,
@@ -424,13 +484,23 @@ def run_all(
         # 5) Converti i PDF prodotti in DOCX con Adobe API
         try:
             if preview_pdf_path.exists():
-                convert_pdf_to_docx_adobe(preview_pdf_path, preview_path)
+                timed_call(
+                    "adobe_preview_pdf_to_docx",
+                    convert_pdf_to_docx_adobe,
+                    preview_pdf_path,
+                    preview_path,
+                )
         except Exception as exc:
             print(f"[ADOBE] preview pdf->docx skipped err={type(exc).__name__}: {exc}", flush=True)
     
         try:
             if compiled_pdf_path.exists():
-                convert_pdf_to_docx_adobe(compiled_pdf_path, Path(output_dir) / FINAL_DOCX_FILENAME)
+                timed_call(
+                    "adobe_final_pdf_to_docx",
+                    convert_pdf_to_docx_adobe,
+                    compiled_pdf_path,
+                    Path(output_dir) / FINAL_DOCX_FILENAME,
+                )
         except Exception as exc:
             print(f"[ADOBE] final pdf->docx skipped err={type(exc).__name__}: {exc}", flush=True)
     
@@ -449,7 +519,9 @@ def run_all(
     try:
         mapping_src = Path(output_dir) / FIELD_MAPPING_FILENAME
         if pdf_mode and source_pdf is not None and mapping_src.exists():
-            write_pdf_from_answers_json(
+            timed_call(
+                "write_final_pdf",
+                write_pdf_from_answers_json,
                 source_pdf,
                 mapping_src,
                 compiled_pdf_path,
@@ -462,13 +534,23 @@ def run_all(
     if pdf_mode:
         try:
             if preview_pdf_path.exists():
-                convert_pdf_to_docx_adobe(preview_pdf_path, preview_path)
+                timed_call(
+                    "adobe_preview_pdf_to_docx",
+                    convert_pdf_to_docx_adobe,
+                    preview_pdf_path,
+                    preview_path,
+                )
         except Exception as exc:
             print(f"[ADOBE] pdf preview pdf->docx skipped err={type(exc).__name__}: {exc}", flush=True)
 
         try:
             if compiled_pdf_path.exists():
-                convert_pdf_to_docx_adobe(compiled_pdf_path, Path(output_dir) / FINAL_DOCX_FILENAME)
+                timed_call(
+                    "adobe_final_pdf_to_docx",
+                    convert_pdf_to_docx_adobe,
+                    compiled_pdf_path,
+                    Path(output_dir) / FINAL_DOCX_FILENAME,
+                )
         except Exception as exc:
             print(f"[ADOBE] pdf final pdf->docx skipped err={type(exc).__name__}: {exc}", flush=True)
     
@@ -476,13 +558,20 @@ def run_all(
 
     try:
         if pre_validator_mapping.exists() and post_validator_mapping.exists():
-            export_mapping_comparison_to_xlsx(
+            timed_call(
+                "export_mapping_excel",
+                export_mapping_comparison_to_xlsx,
                 pre_validator_mapping,
                 post_validator_mapping,
                 provisional_excel_path,
             )
     except Exception:
         pass
+
+    print(
+        f"[TIMING] M2_TOTAL END seconds={time.perf_counter() - m2_total_started_at:.2f}",
+        flush=True,
+    )
 
     return {
         "status": "ok",
