@@ -984,7 +984,7 @@ def run_vision_tables(
     
     by_name: dict[str, tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]] = {}
     
-    with ThreadPoolExecutor(max_workers=6) as ex:
+    with ThreadPoolExecutor(max_workers=10) as ex:
         futures = [ex.submit(_process_one, img) for img in image_paths]
         for fut in as_completed(futures):
             name, detected_row, filled_row, matches_local = fut.result()
