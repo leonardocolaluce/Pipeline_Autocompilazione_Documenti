@@ -44,6 +44,31 @@ def _filled_counts(mapping_path: Path) -> dict[str, int]:
         "filled_tables": filled_tables,
     }
 
+def _pages_from_bundle(bundle):
+    field_pages = set()
+    table_pages = set()
+
+    # Campi normali
+    for item in bundle.get("fields") or []:
+        if item.get("page"):
+            field_pages.add(int(item["page"]))
+
+    # Checkbox: vengono gestite dal ramo campi
+    for item in bundle.get("checkboxes") or []:
+        if item.get("page"):
+            field_pages.add(int(item["page"]))
+
+    # Tabelle/celle
+    for table in bundle.get("tables") or []:
+        if table.get("page"):
+            table_pages.add(int(table["page"]))
+
+        for row in table.get("rows") or []:
+            for cell in row.get("cells") or []:
+                if cell.get("page"):
+                    table_pages.add(int(cell["page"]))
+
+    return field_pages, table_pages
 
 def map_bundle_fields_vision(
     bundle: Dict[str, Any],
@@ -65,6 +90,11 @@ def map_bundle_fields_vision(
     tables_out = Path(output_dir) / "campi_tabelle.json"
     tables_detect_out = Path(output_dir) / "tables_output.json"
     tables_filled_out = Path(output_dir) / "tables_filled_output.json"
+
+    field_pages, table_pages = _pages_from_bundle(bundle)
+
+    print(f"[VISION] pagine campi: {sorted(field_pages)}", flush=True)
+    print(f"[VISION] pagine tabelle: {sorted(table_pages)}", flush=True)
     
     with ThreadPoolExecutor(max_workers=4) as ex:
         f_vision = ex.submit(
@@ -72,6 +102,7 @@ def map_bundle_fields_vision(
             image_dir=image_dir,
             data_json_path=xml_json_path,
             out_json_path=vision_out,
+            allowed_pages=field_pages,
         )
         f_tables = ex.submit(
             run_vision_tables,
@@ -80,6 +111,7 @@ def map_bundle_fields_vision(
             out_json_path=tables_out,
             out_json_detect_path=tables_detect_out,
             out_json_filled_path=tables_filled_out,
+            allowed_pages=table_pages,
         )
     
         try:
