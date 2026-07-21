@@ -25,6 +25,9 @@ DEFAULT_MODEL = os.getenv("MISTRAL_MODEL", "mistral-medium-2508").strip()
 # key: INCOLLA_QUI_LA_TUA_MISTRAL_API_KEY
 MISTRAL_API_KEY_FALLBACK = ""
 
+def _page_number(path: Path) -> int | None:
+    match = re.search(r"page[_-]?0*(\d+)", path.stem, re.I)
+    return int(match.group(1)) if match else None
 
 def _extract_text_from_response(payload: dict[str, Any]) -> str:
     choices = payload.get("choices") or []
@@ -287,6 +290,7 @@ def run_vision_mapping(
     out_json_path: str | Path,
     model: str | None = None,
     max_tokens: int = 5000,
+    allowed_pages: set[int] | None = None,
 ) -> dict[str, Any]:
     api_key = (os.getenv("MISTRAL_API_KEY", "") or MISTRAL_API_KEY_FALLBACK).strip()
     if not api_key:
@@ -301,6 +305,25 @@ def run_vision_mapping(
     )
     if not image_paths:
         raise FileNotFoundError(f"Nessuna immagine trovata in: {image_dir}")
+
+    all_image_paths = image_paths
+
+    if allowed_pages is not None:
+        image_paths = [
+            path for path in all_image_paths
+            if _page_number(path) in allowed_pages
+        ]
+    
+    skipped_pages = [
+        {
+            "image": path.name,
+            "page": _page_number(path),
+            "status": "skipped",
+            "reason": "no_m1_fields_or_checkboxes",
+        }
+        for path in all_image_paths
+        if path not in image_paths
+    ]
 
     data_json_path = Path(data_json_path)
     if not data_json_path.exists():
@@ -486,7 +509,7 @@ def run_vision_mapping(
     results_by_image: dict[str, list[dict[str, Any]]] = {}
     errors_by_image: dict[str, dict[str, Any]] = {}
 
-    with ThreadPoolExecutor(max_workers=2) as ex:
+    with ThreadPoolExecutor(max_workers=4) as ex:
         futures = [ex.submit(_process_one, p) for p in image_paths]
         for fut in as_completed(futures):
             key, matches_for_page, err = fut.result()
@@ -502,9 +525,20 @@ def run_vision_mapping(
 
     coerced = {
         "matches": all_matches,
+        "processed_pages": [
+            {
+                "image": path.name,
+                "page": _page_number(path),
+                "status": "processed",
+            }
+            for path in image_paths
+        ],
+        "skipped_pages": skipped_pages,
         "stats": {
             "filled": sum(1 for item in all_matches if item.get("value") is not None),
             "total": len(all_matches),
+            "pages_processed": len(image_paths),
+            "pages_skipped": len(skipped_pages),
         },
         "errors": page_errors,
     }
