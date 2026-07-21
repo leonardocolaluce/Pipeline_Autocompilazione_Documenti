@@ -546,7 +546,7 @@ def run_vision_mapping(
     results_by_image: dict[str, list[dict[str, Any]]] = {}
     errors_by_image: dict[str, dict[str, Any]] = {}
 
-    with ThreadPoolExecutor(max_workers=4) as ex:
+    with ThreadPoolExecutor(max_workers=6) as ex:
         futures = [ex.submit(_process_one, p) for p in image_paths]
         for fut in as_completed(futures):
             key, matches_for_page, err = fut.result()
