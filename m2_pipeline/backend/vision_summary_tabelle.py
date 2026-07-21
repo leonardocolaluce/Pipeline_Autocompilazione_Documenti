@@ -18,6 +18,9 @@ DEFAULT_MODEL = os.getenv("MISTRAL_MODEL", "mistral-medium-2508").strip()
 # key: INCOLLA_QUI_LA_TUA_MISTRAL_API_KEY
 MISTRAL_API_KEY_FALLBACK = ""
 
+def _page_number(path: Path) -> int | None:
+    match = re.search(r"page[_-]?0*(\d+)", path.stem, re.I)
+    return int(match.group(1)) if match else None
 
 def _extract_text_from_response(payload: dict[str, Any]) -> str:
     choices = payload.get("choices") or []
@@ -752,6 +755,7 @@ def run_vision_tables(
     retries: int = 8,
     retry_wait: float = 5.0,
     retry_max_wait: float = 120.0,
+    allowed_pages: set[int] | None = None,
 ) -> dict[str, Any]:
     """
     Versione "da pipeline": usa le immagini annotate e il data-json, esegue detect+fill
@@ -767,6 +771,26 @@ def run_vision_tables(
         raise FileNotFoundError(f"Cartella immagini non trovata: {base_dir}")
 
     selected_dir, image_paths = _select_image_folder(base_dir)
+
+    all_image_paths = image_paths
+
+    if allowed_pages is not None:
+        image_paths = [
+            path for path in all_image_paths
+            if _page_number(path) in allowed_pages
+        ]
+    
+    skipped_pages = [
+        {
+            "file": path.name,
+            "page": _page_number(path),
+            "status": "skipped",
+            "reason": "no_m1_tables",
+            "tables": [],
+        }
+        for path in all_image_paths
+        if path not in image_paths
+    ]
     if not image_paths:
         raise FileNotFoundError(f"Nessuna immagine trovata in: {selected_dir}")
 
@@ -962,7 +986,24 @@ def run_vision_tables(
 
     out_payload = {
         "matches": matches,
-        "stats": {"filled": sum(1 for m in matches if m.get("value") is not None), "total": len(matches)},
+        "processed_pages": [
+            {
+                "image": path.name,
+                "page": _page_number(path),
+                "status": "processed",
+            }
+            for path in image_paths
+        ],
+        "skipped_pages": skipped_pages,
+        "stats": {
+            "filled": sum(
+                1 for match in matches
+                if match.get("value") is not None
+            ),
+            "total": len(matches),
+            "pages_processed": len(image_paths),
+            "pages_skipped": len(skipped_pages),
+        },
     }
 
     out_path = Path(out_json_path)
@@ -974,10 +1015,15 @@ def run_vision_tables(
         detected_payload = {
             "image_dir": str(selected_dir),
             "model": (model or DEFAULT_MODEL),
-            "images": results,  # [{"file": "...", "tables": [...]}, ...]
+            "images": results,
+            "skipped_pages": skipped_pages,
             "stats": {
                 "images_processed": len(results),
-                "tables_total": sum(len(x.get("tables") or []) for x in results),
+                "images_skipped": len(skipped_pages),
+                "tables_total": sum(
+                    len(x.get("tables") or [])
+                    for x in results
+                ),
             },
         }
         p = Path(out_json_detect_path)
@@ -989,10 +1035,15 @@ def run_vision_tables(
             "image_dir": str(selected_dir),
             "model": (model or DEFAULT_MODEL),
             "anagrafica_json": str(Path(data_json_path)),
-            "images": filled_results,  # [{"file": "...", "tables": [...]}, ...]
+            "images": filled_results,
+            "skipped_pages": skipped_pages,
             "stats": {
                 "images_processed": len(filled_results),
-                "tables_total": sum(len(x.get("tables") or []) for x in filled_results),
+                "images_skipped": len(skipped_pages),
+                "tables_total": sum(
+                    len(x.get("tables") or [])
+                    for x in filled_results
+                ),
             },
         }
         p = Path(out_json_filled_path)
