@@ -16,7 +16,10 @@ from pathlib import Path
 from typing import Any
 from urllib import request
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from .step02_openai_json_utils import parse_llm_json_payload
+from .step02_openai_json_utils import (
+    parse_llm_json_payload,
+    parse_json_text_tolerant,
+)
 
 
 MISTRAL_API_URL = os.getenv("MISTRAL_API_URL", "https://api.mistral.ai/v1/chat/completions").strip()
@@ -85,12 +88,46 @@ def _extract_match_json(text: str) -> tuple[dict[str, Any] | None, str | None]:
                 end_idx = idx + 1
                 break
     if end_idx is None:
-        return None, "JSON tronco in sezione MATCH (brace balancing incompleto)."
+        try:
+            payload, parse_info = parse_json_text_tolerant(chunk)
+    
+            if not isinstance(payload, dict):
+                return None, "JSON MATCH troncato non recuperabile."
+    
+            payload.setdefault("_parse_info", parse_info)
+            return payload, None
+    
+        except Exception as exc:
+            return None, (
+                f"JSON tronco in sezione MATCH non recuperabile: {exc}"
+            )
     candidate = chunk[:end_idx].strip()
+
     try:
-        return json.loads(candidate), None
+        payload, parse_info = parse_json_text_tolerant(candidate)
+    
+        if not isinstance(payload, dict):
+            return None, "La sezione MATCH non contiene un oggetto JSON."
+    
+        payload.setdefault("_parse_info", parse_info)
+        return payload, None
+    
     except Exception as exc:
-        return None, f"JSON non valido in sezione MATCH: {exc}"
+        # Prova anche sul testo non chiuso: json-repair può completarlo.
+        try:
+            payload, parse_info = parse_json_text_tolerant(chunk)
+    
+            if not isinstance(payload, dict):
+                return None, "La sezione MATCH riparata non è un oggetto."
+    
+            payload.setdefault("_parse_info", parse_info)
+            return payload, None
+    
+        except Exception as repair_exc:
+            return None, (
+                f"JSON MATCH non recuperabile: "
+                f"strict={exc}; repair={repair_exc}"
+            )
 
 
 def _extract_sections_to_print(text: str) -> str:
