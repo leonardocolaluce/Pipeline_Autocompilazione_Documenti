@@ -10,6 +10,7 @@ from typing import Any
 from urllib import request
 from urllib.error import HTTPError, URLError
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from .step02_openai_json_utils import parse_json_text_tolerant
 
 
 MISTRAL_API_URL = os.getenv("MISTRAL_API_URL", "https://api.mistral.ai/v1/chat/completions").strip()
@@ -88,13 +89,29 @@ def _extract_first_json(text: str) -> tuple[Any | None, str | None]:
                 break
 
     if end_idx is None:
-        return None, "JSON tronco (brace/bracket balancing incompleto)."
+        try:
+            payload, parse_info = parse_json_text_tolerant(chunk)
+    
+            if isinstance(payload, dict):
+                payload.setdefault("_parse_info", parse_info)
+    
+            return payload, None
+    
+        except Exception as exc:
+            return None, f"JSON tronco non recuperabile: {exc}"
 
     candidate = chunk[:end_idx].strip()
+
     try:
-        return json.loads(candidate), None
+        payload, parse_info = parse_json_text_tolerant(candidate)
+    
+        if isinstance(payload, dict):
+            payload.setdefault("_parse_info", parse_info)
+    
+        return payload, None
+    
     except Exception as exc:
-        return None, f"JSON non valido: {exc}"
+        return None, f"JSON non recuperabile: {exc}"
 
 
 def _encode_image_data_uri(image_path: Path) -> str:
