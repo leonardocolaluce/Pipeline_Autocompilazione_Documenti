@@ -809,7 +809,86 @@ def run_vision_tables(
         if path not in image_paths
     ]
     if not image_paths:
-        raise FileNotFoundError(f"Nessuna immagine trovata in: {selected_dir}")
+        print(
+            "[LLM][vision-tables] skipped - nessuna pagina con tabelle M1",
+            flush=True,
+        )
+
+        out_payload = {
+            "status": "skipped",
+            "reason": "no_m1_table_pages",
+            "matches": [],
+            "processed_pages": [],
+            "skipped_pages": skipped_pages,
+            "stats": {
+                "filled": 0,
+                "total": 0,
+                "pages_processed": 0,
+                "pages_skipped": len(skipped_pages),
+            },
+        }
+
+        out_path = Path(out_json_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_text(
+            json.dumps(out_payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+        if out_json_detect_path is not None:
+            detected_payload = {
+                "status": "skipped",
+                "reason": "no_m1_table_pages",
+                "image_dir": str(selected_dir),
+                "model": model or DEFAULT_MODEL,
+                "images": [],
+                "skipped_pages": skipped_pages,
+                "stats": {
+                    "images_processed": 0,
+                    "images_skipped": len(skipped_pages),
+                    "tables_total": 0,
+                },
+            }
+
+            detected_path = Path(out_json_detect_path)
+            detected_path.parent.mkdir(parents=True, exist_ok=True)
+            detected_path.write_text(
+                json.dumps(
+                    detected_payload,
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+        if out_json_filled_path is not None:
+            filled_payload = {
+                "status": "skipped",
+                "reason": "no_m1_table_pages",
+                "image_dir": str(selected_dir),
+                "model": model or DEFAULT_MODEL,
+                "anagrafica_json": str(Path(data_json_path)),
+                "images": [],
+                "skipped_pages": skipped_pages,
+                "stats": {
+                    "images_processed": 0,
+                    "images_skipped": len(skipped_pages),
+                    "tables_total": 0,
+                },
+            }
+
+            filled_path = Path(out_json_filled_path)
+            filled_path.parent.mkdir(parents=True, exist_ok=True)
+            filled_path.write_text(
+                json.dumps(
+                    filled_payload,
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+
+        return out_payload
 
     data_path = Path(data_json_path)
     if not data_path.exists():
