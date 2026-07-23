@@ -439,32 +439,63 @@ def run_all(
         if source_docx is None:
             raise FileNotFoundError(f"Documento sorgente DOCX non trovato per bundle: {bundle_name}")
     
-        # 2) Converti DOCX -> PDF sorgente (salvato dentro output_dir per tracciabilità)
-        source_pdf_tmp = Path(output_dir) / "__source_converted_from_docx.pdf"
-        convert_script = PROJECT_ROOT / "m1_pipeline" / "postprocessing" / "convert_docx_to_pdf.py"
-        try:
-            import subprocess
-            timed_call(
-                "docx_to_source_pdf",
-                subprocess.run,
-                [
-                    sys.executable,
-                    str(convert_script),
-                    "--input-docx",
-                    str(source_docx),
-                    "--out-pdf",
-                    str(source_pdf_tmp),
-                ],
-                check=True,
-                timeout=180,
-                capture_output=True,
-                text=True,
+        # 2) Riusa il PDF già prodotto da M1.
+        # Se non è disponibile, mantiene la vecchia conversione come fallback.
+        if source_pdf is not None and Path(source_pdf).exists():
+            source_pdf_tmp = Path(source_pdf)
+
+            print(
+                f"[SOURCE] Riutilizzo PDF M1 per M2: {source_pdf_tmp}",
+                flush=True,
             )
-        except Exception as exc:
-            raise RuntimeError(f"DOCX->PDF fallita via convert_docx_to_pdf.py: {type(exc).__name__}: {exc}") from exc
-    
+            print(
+                "[TIMING] docx_to_source_pdf SKIPPED reason=reuse_m1_pdf seconds=0.00",
+                flush=True,
+            )
+
+        else:
+            source_pdf_tmp = (
+                Path(output_dir) /
+                "__source_converted_from_docx.pdf"
+            )
+            convert_script = (
+                PROJECT_ROOT /
+                "m1_pipeline" /
+                "postprocessing" /
+                "convert_docx_to_pdf.py"
+            )
+
+            try:
+                import subprocess
+
+                timed_call(
+                    "docx_to_source_pdf_fallback",
+                    subprocess.run,
+                    [
+                        sys.executable,
+                        str(convert_script),
+                        "--input-docx",
+                        str(source_docx),
+                        "--out-pdf",
+                        str(source_pdf_tmp),
+                    ],
+                    check=True,
+                    timeout=180,
+                    capture_output=True,
+                    text=True,
+                )
+
+            except Exception as exc:
+                raise RuntimeError(
+                    "DOCX->PDF fallback fallita via "
+                    f"convert_docx_to_pdf.py: "
+                    f"{type(exc).__name__}: {exc}"
+                ) from exc
+
         if not source_pdf_tmp.exists():
-            raise FileNotFoundError(f"PDF sorgente non generato: {source_pdf_tmp}")
+            raise FileNotFoundError(
+                f"PDF sorgente non disponibile: {source_pdf_tmp}"
+            )
     
         # 3) Scrivi PREVIEW PDF (da mapping provvisorio)
         try:
