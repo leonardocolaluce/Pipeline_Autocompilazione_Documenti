@@ -40,8 +40,10 @@ def _bbox(row: dict[str, Any]) -> list[float] | None:
     # Normalize
     x0n, x1n = (x0, x1) if x0 <= x1 else (x1, x0)
     y0n, y1n = (y0, y1) if y0 <= y1 else (y1, y0)
-    if x1n - x0n < 1 or y1n - y0n < 1:
+
+    if x1n - x0n < 1 or y1n - y0n <= 0:
         return None
+    
     return [x0n, y0n, x1n, y1n]
 
 
@@ -135,8 +137,19 @@ def write_pdf_from_answers_json(
                 align=1,
                 overlay=True,
             )
+        
             if rc < 0:
                 overflow += 1
+        
+                page.insert_text(
+                    (rect.x0 + 1.0, rect.y1 - 1.5),
+                    "X",
+                    fontsize=7,
+                    fontname="helv",
+                    color=(0, 0, 0),
+                    overlay=True,
+                )
+        
             written += 1
             continue
 
@@ -209,7 +222,15 @@ def write_pdf_from_answers_json(
     out_pdf.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(out_pdf))
     doc.close()
-
+    
+    print(
+        f"[PDF_WRITER] written={written} "
+        f"skipped={skipped} "
+        f"overflow={overflow} "
+        f"adjusted_boxes={adjusted}",
+        flush=True,
+    )
+    
     return {
         "status": "ok",
         "source_pdf": str(source_pdf),
