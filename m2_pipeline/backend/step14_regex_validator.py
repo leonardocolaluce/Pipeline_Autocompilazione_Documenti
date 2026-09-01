@@ -264,6 +264,92 @@ def _validate_answer(expected: str | None, answer: str, *, people_names: set[str
     # Default: don't remove.
     return RuleVerdict(True, "ok_default", expected or "UNKNOWN")
 
+def _get_by_path(data: Any, path: str) -> Any:
+    cur = data
+    token_re = re.compile(r"(?P<name>[A-Za-z0-9_]+)|\[(?P<index>\d+)\]")
+    for match in token_re.finditer(str(path or "")):
+        name = match.groupdict().get("name")
+        index = match.groupdict().get("index")
+
+        if name is not None:
+            if not isinstance(cur, dict) or name not in cur:
+                return None
+            cur = cur[name]
+        elif index is not None:
+            if not isinstance(cur, list):
+                return None
+            idx = int(index)
+            if idx < 0 or idx >= len(cur):
+                return None
+            cur = cur[idx]
+
+    return cur
+
+
+def _source_path_from_reason(row: dict[str, Any]) -> str:
+    reason = str(row.get("reason") or "")
+    match = re.search(r"vision:([^:|]+)", reason)
+    return match.group(1).strip() if match else ""
+
+
+def _root_path(path: str) -> str:
+    text = str(path or "").strip()
+    if "." not in text:
+        return text
+    return text.rsplit(".", 1)[0]
+
+
+def _first_sibling_value(data: dict[str, Any], source_path: str, keys: tuple[str, ...]) -> str:
+    root = _root_path(source_path)
+    node = _get_by_path(data, root)
+    if not isinstance(node, dict):
+        return ""
+
+    lowered = {str(k).lower(): k for k in node.keys()}
+    for key in keys:
+        real_key = lowered.get(key.lower())
+        if real_key is None:
+            continue
+        value = _norm_text(node.get(real_key))
+        if value:
+            return value
+
+    return ""
+
+
+def _repair_birth_related_answer(
+    row: dict[str, Any],
+    expected: str | None,
+    verdict: RuleVerdict,
+    data: dict[str, Any],
+) -> str:
+    source_path = _source_path_from_reason(row)
+    if not source_path:
+        return ""
+
+    if expected == "LUOGO_NASC" and verdict.reason in {"luogo_is_date", "luogo_is_cf"}:
+        return _first_sibling_value(
+            data,
+            source_path,
+            ("luogo_nascita", "luogoDiNascita", "comune_nascita", "citta_nascita", "città_nascita"),
+        )
+
+    if expected == "DATA" and verdict.reason in {"data_bad_format", "data_is_person"}:
+        return _first_sibling_value(
+            data,
+            source_path,
+            ("data_nascita", "dataDiNascita", "nato_il", "nata_il"),
+        )
+
+    if expected == "PROV":
+        return _first_sibling_value(
+            data,
+            source_path,
+            ("provincia_nascita", "provinciaDiNascita", "prov_nascita", "sigla_provincia_nascita", "provincia"),
+        )
+
+    return ""
+
 
 def clean_mapping_with_regex_rules(
     mapping_json_path: str | Path,
@@ -308,6 +394,22 @@ def clean_mapping_with_regex_rules(
 
         if verdict.ok:
             continue
+
+        repaired = _repair_birth_related_answer(row, expected, verdict, data)
+        if repaired:
+            repaired_verdict = _validate_answer(
+                expected,
+                repaired,
+                people_names=people_names,
+                company_names=company_names,
+            )
+            if repaired_verdict.ok:
+                prev_reason = _norm_text(row.get("reason"))
+                row["answer"] = repaired
+                row["confidence"] = max(float(row.get("confidence") or 0.0), 0.85)
+                row["validator_status"] = "repaired_regex"
+                row["reason"] = (prev_reason + "|" if prev_reason else "") + f"regex_validator:repaired_{verdict.reason}"
+                continue
 
         prev_reason = _norm_text(row.get("reason"))
         row["answer"] = "N/D"
