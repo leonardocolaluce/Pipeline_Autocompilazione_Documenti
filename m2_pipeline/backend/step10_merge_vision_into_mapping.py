@@ -175,6 +175,30 @@ def _label_score(vision_label: str, row_label: str) -> float:
 
     return 0.0
 
+def _checkbox_label_score(vision_label: str, row_text: str) -> float:
+    vision = _clean_text(vision_label)
+    row = _clean_text(row_text)
+
+    if not vision or not row:
+        return 0.0
+
+    if vision == row:
+        return 100.0
+
+    if vision in row or row in vision:
+        return 90.0
+
+    vision_words = set(_TOKEN_RE.findall(vision))
+    row_words = set(_TOKEN_RE.findall(row))
+    if not vision_words or not row_words:
+        return 0.0
+
+    overlap = len(vision_words & row_words)
+    if overlap:
+        return 50.0 + (40.0 * overlap / max(len(vision_words), 1))
+
+    return 0.0
+
 _SOURCE_LABEL_HINTS = {
     "ragione_sociale": [
         "ragione sociale", "denominazione", "impresa", "societa",
@@ -318,11 +342,15 @@ def _candidate_score(
     label = str(match.get("label") or "")
     row_label = str(row.get("label") or "")
     row_text = _row_search_text(row)
+    checkbox_score = 0.0
+    if match_type == "checkbox" and row_type == "checkbox":
+        checkbox_score = _checkbox_label_score(label, row_text)
 
     score = max(
         _label_score(label, row_label),
         _label_score(label, row_text),
         _source_hint_score(match, row),
+        checkbox_score,
     )
 
     if score <= 0:
