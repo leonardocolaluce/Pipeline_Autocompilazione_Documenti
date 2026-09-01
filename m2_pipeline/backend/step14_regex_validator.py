@@ -134,9 +134,14 @@ def _classify_expected_type(row: dict[str, Any]) -> str | None:
         return None
 
     # Fiscal codes
-    if any(k in hay for k in ("cod fisc", "codice fiscale", "c f", "cf")):
+    has_cf = any(k in hay for k in ("cod fisc", "codice fiscale", "c f", "cf"))
+    has_piva = any(k in hay for k in ("p iva", "partita iva", "p.iva", "iva"))
+
+    if has_cf and has_piva:
+        return "CF_OR_PIVA"
+    if has_cf:
         return "CF"
-    if any(k in hay for k in ("p iva", "partita iva", "p.iva", "iva")):
+    if has_piva:
         return "PIVA"
 
     # Company identity
@@ -156,7 +161,7 @@ def _classify_expected_type(row: dict[str, Any]) -> str | None:
     # Address-like
     if any(k in hay for k in ("sede legale", "residente a", "domiciliato", "indirizzo", "via", "viale", "piazza", "localita", "citta", "comune")):
         return "INDIRIZZO"
-    if any(k in hay for k in ("cap",)):
+    if re.search(r"\bc\s*\.?\s*a\s*\.?\s*p\s*\.?\b|\bcap\b", hay):
         return "CAP"
     if any(k in hay for k in ("provincia", "prov",)):
         return "PROV"
@@ -188,6 +193,12 @@ def _validate_answer(expected: str | None, answer: str, *, people_names: set[str
         if PIVA_RE.match(re.sub(r"\D+", "", text)):
             return RuleVerdict(False, "cf_is_piva", "CF")
         return RuleVerdict(False, "cf_bad_format", "CF")
+
+    if expected == "CF_OR_PIVA":
+        digits = re.sub(r"\D+", "", text)
+        if CF_RE.match(compact_upper) or PIVA_RE.match(digits):
+            return RuleVerdict(True, "ok", "CF_OR_PIVA")
+        return RuleVerdict(False, "cf_or_piva_bad_format", "CF_OR_PIVA")
 
     if expected == "PIVA":
         digits = re.sub(r"\D+", "", text)
