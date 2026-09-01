@@ -264,9 +264,22 @@ _SOURCE_LABEL_HINTS = {
 }
 
 
+def _row_search_text(row: Dict[str, Any]) -> str:
+    parts = [
+        row.get("label"),
+        row.get("context"),
+        row.get("context_line"),
+        row.get("context_above"),
+        row.get("table_headers"),
+        row.get("row_labels"),
+        row.get("row_cells"),
+    ]
+    return " ".join(str(part or "") for part in parts)
+
+
 def _source_hint_score(match: Dict[str, Any], row: Dict[str, Any]) -> float:
     source_path = str(match.get("source_path") or "").lower()
-    row_label = str(row.get("label") or "")
+    row_text = _row_search_text(row)
 
     if not source_path:
         return 0.0
@@ -276,7 +289,7 @@ def _source_hint_score(match: Dict[str, Any], row: Dict[str, Any]) -> float:
         if source_key not in source_path:
             continue
         for hint in hints:
-            best = max(best, _label_score(hint, row_label))
+            best = max(best, _label_score(hint, row_text))
 
     return best
 
@@ -302,9 +315,15 @@ def _candidate_score(
     if match_type != "checkbox" and row_type == "checkbox":
         return 0.0
 
-    label = str(match.get("label") or "")
-    row_label = str(row.get("label") or "")
-    score = max(_label_score(label, row_label), _source_hint_score(match, row))
+        label = str(match.get("label") or "")
+        row_label = str(row.get("label") or "")
+        row_text = _row_search_text(row)
+    
+        score = max(
+            _label_score(label, row_label),
+            _label_score(label, row_text),
+            _source_hint_score(match, row),
+        )
     if score <= 0:
         return 0.0
 
