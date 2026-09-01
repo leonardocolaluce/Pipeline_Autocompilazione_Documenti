@@ -402,6 +402,8 @@ def run_vision_mapping(
                                         "- Non inventare path: i path devono essere reali e riferiti al JSON esattamente come fornito.\n"
                                         "- Distingui campi PERSONA (es. residenza persona) da campi AZIENDA (sede legale, P.IVA, ragione sociale). Se il JSON non ha residenza persona, metti N/D.\n"
                                         "- NON compilare un campo solo perché il dato esiste nel JSON: compila PEC/email/CF/P.IVA SOLO se il testo vicino allo specifico spazio da compilare lo richiede chiaramente.\n"
+                                        "- Se la pagina o sezione ripete campi come ragione sociale, impresa, consorzio, consorziata, mandante, ausiliaria o operatore economico, NON assumere che tutti si riferiscano alla stessa azienda del JSON.\n"
+                                        "- Compila i dati aziendali solo quando il contesto locale indica chiaramente l'operatore principale o l'impresa dichiarante; negli altri casi usa value=null.\n"
                                         "- Se il documento contiene molti campi \"PEC/email\" su pagine diverse, NON assumere che vadano tutti compilati: ogni campo va deciso dal contesto locale.\n"
                                         "- In caso di dubbio PEC vs email: compila la PEC solo se il campo dice esplicitamente \"PEC\"; se dice solo \"email\" usa PEC solo se è chiaramente un contatto.\n"
                                         "REGOLE PERSONA (SELEZIONE SOGGETTO):\n"
