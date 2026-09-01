@@ -158,11 +158,13 @@ def _classify_expected_type(row: dict[str, Any]) -> str | None:
     if hay in {"il", "data", "data di nascita"} or "data di nascita" in hay:
         return "DATA"
 
+    if re.search(r"\bc\s*\.?\s*a\s*\.?\s*p\s*\.?\b|\bcap\b", hay):
+        return "CAP"
+
     # Address-like
     if any(k in hay for k in ("sede legale", "residente a", "domiciliato", "indirizzo", "via", "viale", "piazza", "localita", "citta", "comune")):
         return "INDIRIZZO"
-    if re.search(r"\bc\s*\.?\s*a\s*\.?\s*p\s*\.?\b|\bcap\b", hay):
-        return "CAP"
+    
     if any(k in hay for k in ("provincia", "prov",)):
         return "PROV"
 
