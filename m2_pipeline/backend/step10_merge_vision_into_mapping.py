@@ -303,34 +303,34 @@ def _candidate_score(
     vision_page = _page_from_image(match.get("image_page"))
     row_page = _page_from_row(row)
 
-    # If both pages are known, do not cross pages. This prevents matching a
-    # generic label like "a" on page 1 to an unrelated field on page 4.
+    # If both pages are known, do not cross pages.
     if vision_page is not None and row_page is not None and vision_page != row_page:
         return 0.0
 
     match_type = str(match.get("field_type") or "").strip()
     row_type = str(row.get("item_type") or "").strip()
+
     if match_type == "checkbox" and row_type != "checkbox":
         return 0.0
     if match_type != "checkbox" and row_type == "checkbox":
         return 0.0
 
-        label = str(match.get("label") or "")
-        row_label = str(row.get("label") or "")
-        row_text = _row_search_text(row)
-    
-        score = max(
-            _label_score(label, row_label),
-            _label_score(label, row_text),
-            _source_hint_score(match, row),
-        )
+    label = str(match.get("label") or "")
+    row_label = str(row.get("label") or "")
+    row_text = _row_search_text(row)
+
+    score = max(
+        _label_score(label, row_label),
+        _label_score(label, row_text),
+        _source_hint_score(match, row),
+    )
+
     if score <= 0:
         return 0.0
 
     if vision_page is not None and row_page == vision_page:
         score += 20.0
 
-    # Prefer rows after the last matched row on the same page, preserving visual order.
     order_page = row_page if row_page is not None else vision_page
     if order_page is not None:
         last_index = last_index_for_page.get(order_page, -1)
